@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model ProductionJob {
+  id                 Int       @id @default(autoincrement())
+  sourceRow          Int       @unique
+  seqno              Int       @default(0)
+  arbpl              String    @db.VarChar(32)
+  aufnr              String    @db.VarChar(64)
+  text1              String?   @db.VarChar(32)
+  zpmat              String?   @db.VarChar(64)
+  zptkx              String?   @db.Text
+  zptxt              String?   @db.Text
+  zpg1d              String?   @db.Text
+  zpg2d              String?   @db.Text
+  zpg3d              String?   @db.Text
+  zpg4d              String?   @db.Text
+  zpg5d              String?   @db.Text
+  stdate             DateTime?
+  findate            DateTime?
+  prdday             Decimal?  @db.Decimal(10, 2)
+  steelDibId         String?   @db.VarChar(64)
+  steelDibDesc       String?   @db.Text
+  steelDibLong       String?   @db.Text
+  zlmat              String?   @db.VarChar(64)
+  zltkx              String?   @db.VarChar(255)
+  zlg3d              String?   @db.Text
+  zlg5d              String?   @db.Text
+  vornr              String?   @db.VarChar(32)
+  ltxa1              String?   @db.VarChar(128)
+  usr00              String?   @db.VarChar(128)
+  usr02              String?   @db.VarChar(64)
+  time               String?   @db.VarChar(64)
+  optime             Decimal?  @db.Decimal(10, 2)
+  opdays             Decimal?  @db.Decimal(10, 2)
+  mgvrg              Int       @default(0)
+  remark             String?   @db.Text
+  priority           String?   @db.VarChar(32)
+  entd               DateTime?
+  zvers              String?   @db.VarChar(16)
+  confirmYield       Int       @default(0)
+  confirmHold        Int       @default(0)
+  confirmScrap       Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([arbpl])
+  @@index([stdate])
+  @@index([text1])
+  @@index([zlmat])
+  @@index([zltkx])
+  @@index([arbpl, stdate])
+  @@map("production_jobs")
+}

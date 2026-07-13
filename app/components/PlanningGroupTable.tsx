@@ -1,0 +1,584 @@
+'use client';
+
+import * as React from 'react';
+import {
+  Box,
+  Checkbox,
+  Chip,
+  IconButton,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { ArrowDown2, ArrowUp2, HambergerMenu } from 'iconsax-react';
+import { cleanZpg2d } from '@/lib/zpg1d-helpers';
+import type { PlanningJob } from '@/lib/planning';
+import JobDetailDialog from './JobDetailDialog';
+
+const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+export type SequenceChange = {
+  previousSeq: number;
+  currentSeq: number;
+  previousWorkCenter: string;
+  currentWorkCenter: string;
+  previousGroup: string | null;
+  currentGroup: string | null;
+};
+
+function formatDate(value: string | null) {
+  if (!value) return '-';
+  return dateFormatter.format(new Date(value));
+}
+
+function getLacquerKey(job: PlanningJob) {
+  return job.zlg3d?.trim() || 'ไม่ระบุ Lacquer';
+}
+
+function createLacquerColor(index: number) {
+  const hue = Math.round((index * 137.508) % 360);
+  const saturation = [62, 70, 56, 66][index % 4];
+  const lightness = [42, 36, 48][Math.floor(index / 4) % 3];
+  return {
+    bg: `hsla(${hue}, ${saturation}%, ${lightness}%, 0.07)`,
+    chipBg: `hsla(${hue}, ${saturation}%, ${lightness}%, 0.16)`,
+    text: `hsl(${hue}, ${Math.min(saturation + 8, 82)}%, ${Math.max(lightness - 14, 24)}%)`,
+    border: `hsla(${hue}, ${saturation}%, ${lightness}%, 0.3)`,
+  };
+}
+
+const fallbackLacquerColor = createLacquerColor(0);
+
+const YellowWarningIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    style={{ display: 'inline-block', verticalAlign: 'middle' }}
+  >
+    <path
+      d="M12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22Z"
+      fill="#d97706"
+    />
+    <path
+      d="M12 8V13"
+      stroke="#ffffff"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    />
+    <circle cx="12" cy="16.5" r="1.25" fill="#ffffff" />
+  </svg>
+);
+
+const isNearOrOverdue = (findateStr: string | null) => {
+  if (!findateStr) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const [year, month, day] = findateStr.split('-').map(Number);
+  const finishDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+  
+  const diffMs = finishDate.getTime() - today.getTime();
+  const diffDays = Math.floor(diffMs / 86_400_000);
+  const inclusiveDays = diffDays + 1;
+  
+  return inclusiveDays >= 1 && inclusiveDays <= 3;
+};
+
+interface PlanningJobRowProps {
+  job: PlanningJob;
+  globalIndex: number;
+  lacquerColor: { bg: string; chipBg: string; text: string; border: string };
+  isSelected: boolean;
+  onToggleSelect: (jobId: number) => void;
+  isFirst: boolean;
+  isLast: boolean;
+  workCenter: string;
+  onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
+  onDrag: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onDragOver: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
+  onDragLeave: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onDrop: (event: React.DragEvent<HTMLTableRowElement>, targetJobId: number, workCenter: string) => void;
+  onDragEnd: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onMoveUp: (jobId: number) => void;
+  onMoveDown: (jobId: number) => void;
+  onOpenDetails: (job: PlanningJob) => void;
+}
+
+const PlanningJobRow = React.memo(({
+  job,
+  globalIndex,
+  lacquerColor,
+  isSelected,
+  onToggleSelect,
+  isFirst,
+  isLast,
+  workCenter,
+  onDragStart,
+  onDrag,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onMoveUp,
+  onMoveDown,
+  onOpenDetails,
+}: PlanningJobRowProps) => {
+  return (
+    <TableRow
+      hover
+      draggable
+      data-job-id={job.id}
+      onDragStart={(event) => onDragStart(event, job.id)}
+      onDrag={onDrag}
+      onDragOver={(event) => onDragOver(event, job.id)}
+      onDragLeave={onDragLeave}
+      onDrop={(event) => onDrop(event, job.id, workCenter)}
+      onDragEnd={onDragEnd}
+      onClick={() => onOpenDetails(job)}
+      sx={{
+        cursor: 'pointer',
+        transition: 'background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms ease',
+        opacity: 1,
+        bgcolor: isSelected ? 'rgba(79, 70, 229, 0.05) !important' : 'transparent',
+        boxShadow: `inset 4px 0 0 ${lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
+        '&:active': { cursor: 'grabbing' },
+        '&:hover': { bgcolor: isSelected ? 'rgba(79, 70, 229, 0.08) !important' : 'rgba(15, 23, 42, 0.025)' },
+        '&.dragging-row': { opacity: 0.45, transform: 'scale(0.985)' },
+        '& .quick-move-btns': {
+          opacity: 1,
+        },
+        '&.drop-confirm-row': {
+          position: 'relative',
+          animation: 'dropConfirmRow 1100ms ease-out',
+          bgcolor: 'rgba(5, 150, 105, 0.08)',
+          boxShadow: 'inset 4px 0 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+        },
+        '&.drop-confirm-before': {
+          boxShadow: 'inset 4px 0 0 #059669, inset 0 3px 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+        },
+        '&.drop-confirm-after': {
+          boxShadow: 'inset 4px 0 0 #059669, inset 0 -3px 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+        },
+        '&.drop-confirm-row td:first-of-type': {
+          position: 'relative',
+        },
+        '&.drop-confirm-row td:first-of-type::before': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          right: -1,
+          zIndex: 3,
+          height: 3,
+          borderRadius: 999,
+          bgcolor: '#059669',
+          transform: 'translateY(-50%)',
+          animation: 'dropPlaceLine 1100ms ease-out',
+        },
+        '&.drop-confirm-before td:first-of-type::before': { top: 0 },
+        '&.drop-confirm-after td:first-of-type::before': { top: '100%' },
+        '&.drop-confirm-row td:first-of-type::after': {
+          content: '"เพิ่งวางตรงนี้"',
+          position: 'absolute',
+          left: 10,
+          zIndex: 3,
+          px: 1,
+          py: 0.25,
+          borderRadius: 1,
+          bgcolor: '#059669',
+          color: '#ffffff',
+          fontSize: '0.68rem',
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+          boxShadow: '0 8px 18px rgba(5, 150, 105, 0.16)',
+          transform: 'translateY(-50%)',
+          animation: 'dropLabelOut 1100ms ease-out',
+        },
+        '&.drop-confirm-before td:first-of-type::after': { top: 0 },
+        '&.drop-confirm-after td:first-of-type::after': { top: '100%' },
+        '&.drop-target-row': {
+          bgcolor: 'rgba(79, 70, 229, 0.055)',
+          boxShadow: 'inset 4px 0 0 #4f46e5, 0 10px 24px rgba(79, 70, 229, 0.08)',
+          position: 'relative',
+        },
+        '&.drop-before-row': {
+          boxShadow: 'inset 4px 0 0 #4f46e5, inset 0 3px 0 #4f46e5, 0 10px 24px rgba(79, 70, 229, 0.08)',
+        },
+        '&.drop-after-row': {
+          boxShadow: 'inset 4px 0 0 #0891b2, inset 0 -3px 0 #0891b2, 0 10px 24px rgba(8, 145, 178, 0.08)',
+        },
+        '& td': {
+          boxSizing: 'border-box',
+          py: 1,
+          transition: 'border-color 160ms ease, background-color 160ms ease',
+          verticalAlign: 'middle',
+        },
+        '&.drop-target-row td': { position: 'relative' },
+        '&.drop-before-row td:first-of-type::before, &.drop-after-row td:first-of-type::before': {
+          position: 'absolute',
+          left: 8,
+          zIndex: 3,
+          px: 1,
+          py: 0.25,
+          borderRadius: 1,
+          color: '#ffffff',
+          fontSize: '0.68rem',
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+          boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)',
+          transform: 'translateY(-50%)',
+          animation: 'dropHintIn 140ms ease-out',
+        },
+        '&.drop-before-row td:first-of-type::before': {
+          content: '"แทรกก่อนแถวนี้"',
+          top: 0,
+          bgcolor: '#4f46e5',
+        },
+        '&.drop-after-row td:first-of-type::before': {
+          content: '"วางต่อท้ายแถวนี้"',
+          top: '100%',
+          bgcolor: '#0891b2',
+        },
+      }}
+    >
+      <TableCell width={48} onClick={(event) => event.stopPropagation()} sx={{ textAlign: 'center', py: 0 }}>
+        <Checkbox
+          size="small"
+          checked={isSelected}
+          onChange={() => onToggleSelect(job.id)}
+          sx={{ p: 0.5 }}
+        />
+      </TableCell>
+      <TableCell>
+        <Chip size="small" label={globalIndex + 1} />
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontWeight: 800 }}>
+          {job.aufnr}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          {job.zptkx || '-'}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        {job.zpg2d ? (
+          <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 650 }}>
+            {cleanZpg2d(job.zpg2d)}
+          </Typography>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+      <TableCell>
+        {job.zpg3d ? (
+          <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 650 }}>
+            {job.zpg3d}
+          </Typography>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+      <TableCell>{formatDate(job.stdate)}</TableCell>
+      <TableCell>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          {formatDate(job.findate)}
+          {isNearOrOverdue(job.findate) && (
+            <Tooltip title="ใกล้ถึงกำหนดส่งหรือเกินกำหนด (ภายใน 3 วัน)" arrow>
+              <span style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}>
+                <YellowWarningIcon />
+              </span>
+            </Tooltip>
+          )}
+        </span>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontWeight: 750 }}>
+          <Box
+            component="span"
+            sx={{
+              display: 'inline-block',
+              px: 1,
+              py: 0.25,
+              borderRadius: 1,
+              bgcolor: lacquerColor.chipBg,
+              border: `1px solid ${lacquerColor.border}`,
+              color: lacquerColor.text,
+              fontWeight: 850,
+            }}
+          >
+            {job.zltkx || '-'}
+          </Box>
+        </Typography>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          {job.usr00 || '-'} / {job.usr02 || '-'}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Chip
+          size="small"
+          color={job.text1?.toUpperCase() === 'WAIT' ? 'warning' : 'default'}
+          label={job.text1 || 'PLAN'}
+        />
+      </TableCell>
+      <TableCell align="center">
+        <Stack direction="row" spacing={0} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+          <Stack
+            className="quick-move-btns"
+            direction="column"
+            spacing={0.25}
+            sx={{ mr: 0.35 }}
+          >
+            <Tooltip title="ย้ายขึ้น 1 ลำดับ" placement="top" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={isFirst}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveUp(job.id);
+                  }}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    p: 0,
+                    border: '1px solid',
+                    borderColor: isFirst ? 'rgba(15, 23, 42, 0.1)' : 'rgba(79, 70, 229, 0.36)',
+                    bgcolor: isFirst ? 'rgba(15, 23, 42, 0.035)' : '#ffffff',
+                    boxShadow: isFirst ? 'none' : '0 2px 8px rgba(79, 70, 229, 0.18)',
+                    color: isFirst ? 'action.disabled' : '#4f46e5',
+                    '&:hover': {
+                      bgcolor: 'rgba(79, 70, 229, 0.1)',
+                      borderColor: '#4f46e5',
+                    },
+                  }}
+                >
+                  <ArrowUp2 size="18" color="currentColor" variant="Bold" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="ย้ายลง 1 ลำดับ" placement="bottom" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={isLast}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveDown(job.id);
+                  }}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    p: 0,
+                    border: '1px solid',
+                    borderColor: isLast ? 'rgba(15, 23, 42, 0.1)' : 'rgba(8, 145, 178, 0.38)',
+                    bgcolor: isLast ? 'rgba(15, 23, 42, 0.035)' : '#ffffff',
+                    boxShadow: isLast ? 'none' : '0 2px 8px rgba(8, 145, 178, 0.18)',
+                    color: isLast ? 'action.disabled' : '#0891b2',
+                    '&:hover': {
+                      bgcolor: 'rgba(8, 145, 178, 0.1)',
+                      borderColor: '#0891b2',
+                    },
+                  }}
+                >
+                  <ArrowDown2 size="18" color="currentColor" variant="Bold" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+
+          {/* Drag handle */}
+          <Tooltip title="ลากแถวนี้เพื่อจัดลำดับ" placement="top" arrow>
+            <IconButton
+              size="small"
+              onClick={(event) => event.stopPropagation()}
+              sx={{
+                cursor: 'grab',
+                transition: 'transform 160ms ease, background-color 160ms ease',
+                '.dragging-row &': {
+                  transform: 'rotate(90deg) scale(1.08)',
+                  bgcolor: 'rgba(79, 70, 229, 0.08)',
+                },
+              }}
+            >
+              <HambergerMenu size="18" color="#64748b" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </TableCell>
+    </TableRow>
+  );
+});
+
+PlanningJobRow.displayName = 'PlanningJobRow';
+
+export interface PlanningGroupTableProps {
+  groupJobs: PlanningJob[];
+  group: PlanningJob[];
+  workCenter: string;
+  isCollapsed: boolean;
+  lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
+  selectedJobIds: Set<number>;
+  onToggleSelect: (jobId: number) => void;
+  onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
+  onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
+  onDrag: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onDragOver: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
+  onDragLeave: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onDrop: (event: React.DragEvent<HTMLTableRowElement>, targetJobId: number, workCenter: string) => void;
+  onDragEnd: (event: React.DragEvent<HTMLTableRowElement>) => void;
+  onMoveUp: (jobId: number) => void;
+  onMoveDown: (jobId: number) => void;
+}
+
+const PlanningGroupTable = React.memo(({
+  groupJobs,
+  group,
+  workCenter,
+  isCollapsed,
+  lacquerColorMap,
+  selectedJobIds,
+  onToggleSelect,
+  onToggleSelectAllGroup,
+  onDragStart,
+  onDrag,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+  onMoveUp,
+  onMoveDown,
+}: PlanningGroupTableProps) => {
+  const [selectedJob, setSelectedJob] = React.useState<PlanningJob | null>(null);
+  const isMountedRef = React.useRef(false);
+  const groupIndexByJobId = React.useMemo(
+    () => new Map(group.map((job, index) => [job.id, index])),
+    [group],
+  );
+
+  const openDetails = React.useCallback((job: PlanningJob) => {
+    if (isMountedRef.current) {
+      setSelectedJob(job);
+    }
+  }, []);
+
+  const closeDetails = React.useCallback(() => {
+    if (isMountedRef.current) {
+      setSelectedJob(null);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  if (isCollapsed) return null;
+  if (groupJobs.length === 0) {
+    return (
+      <Box sx={{ mt: 1, p: 2, border: '1px dashed rgba(15, 23, 42, 0.1)', borderRadius: 1.5, textAlign: 'center' }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          ไม่มีงานในกลุ่มนี้
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <>
+      <TableContainer
+        sx={{
+          mt: 1,
+          border: '1px solid rgba(15, 23, 42, 0.06)',
+          borderRadius: 1.5,
+          overflow: 'visible',
+        }}
+      >
+        <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
+          <TableHead>
+            <TableRow>
+              <TableCell width={48} align="center" sx={{ py: 0 }}>
+                <Checkbox
+                  size="small"
+                  checked={groupJobs.length > 0 && groupJobs.every(job => selectedJobIds.has(job.id))}
+                  indeterminate={groupJobs.some(job => selectedJobIds.has(job.id)) && !groupJobs.every(job => selectedJobIds.has(job.id))}
+                  onChange={(e) => onToggleSelectAllGroup(groupJobs.map(j => j.id), e.target.checked)}
+                  sx={{ p: 0.5 }}
+                />
+              </TableCell>
+              <TableCell width={72}>Seq.</TableCell>
+              <TableCell width={150}>Order</TableCell>
+              <TableCell>Description 1</TableCell>
+              <TableCell width={120}>Group 2</TableCell>
+              <TableCell width={130}>Group 3</TableCell>
+              <TableCell width={130}>Start Date</TableCell>
+              <TableCell width={130}>Finish Date</TableCell>
+              <TableCell width={190}>Description / FW. / TEMP</TableCell>
+              <TableCell width={96}>Status</TableCell>
+              <TableCell width={100} align="center">จัดคิว</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {groupJobs.map((job) => {
+              const globalIndex = groupIndexByJobId.get(job.id) ?? 0;
+              const lacquerKey = getLacquerKey(job);
+              const lacquerColor = lacquerColorMap.get(lacquerKey) ?? fallbackLacquerColor;
+
+              return (
+                <PlanningJobRow
+                  key={job.id}
+                  job={job}
+                  globalIndex={globalIndex}
+                  lacquerColor={lacquerColor}
+                  isSelected={selectedJobIds.has(job.id)}
+                  onToggleSelect={onToggleSelect}
+                  isFirst={globalIndex === 0}
+                  isLast={globalIndex === group.length - 1}
+                  workCenter={workCenter}
+                  onDragStart={onDragStart}
+                  onDrag={onDrag}
+                  onDragOver={onDragOver}
+                  onDragLeave={onDragLeave}
+                  onDrop={onDrop}
+                  onDragEnd={onDragEnd}
+                  onMoveUp={onMoveUp}
+                  onMoveDown={onMoveDown}
+                  onOpenDetails={openDetails}
+                />
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <JobDetailDialog
+        fallbackLacquerColor={fallbackLacquerColor}
+        job={selectedJob}
+        lacquerColorMap={lacquerColorMap}
+        onClose={closeDetails}
+      />
+    </>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.isCollapsed === nextProps.isCollapsed &&
+    prevProps.groupJobs.length === nextProps.groupJobs.length &&
+    prevProps.groupJobs.every((job, i) => job === nextProps.groupJobs[i]) &&
+    prevProps.groupJobs.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id))
+  );
+});
+
+PlanningGroupTable.displayName = 'PlanningGroupTable';
+
+export default PlanningGroupTable;
