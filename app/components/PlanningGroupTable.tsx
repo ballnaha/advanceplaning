@@ -443,6 +443,7 @@ PlanningJobRow.displayName = 'PlanningJobRow';
 export interface PlanningGroupTableProps {
   groupJobs: PlanningJob[];
   group: PlanningJob[];
+  groupLabel: string;
   workCenter: string;
   isCollapsed: boolean;
   lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
@@ -454,6 +455,7 @@ export interface PlanningGroupTableProps {
   onDragOver: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
   onDragLeave: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onDrop: (event: React.DragEvent<HTMLTableRowElement>, targetJobId: number, workCenter: string) => void;
+  onDropToGroup: (event: React.DragEvent<HTMLElement>, workCenter: string, groupLabel: string) => void;
   onDragEnd: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onMoveUp: (jobId: number) => void;
   onMoveDown: (jobId: number) => void;
@@ -462,6 +464,7 @@ export interface PlanningGroupTableProps {
 const PlanningGroupTable = React.memo(({
   groupJobs,
   group,
+  groupLabel,
   workCenter,
   isCollapsed,
   lacquerColorMap,
@@ -473,11 +476,13 @@ const PlanningGroupTable = React.memo(({
   onDragOver,
   onDragLeave,
   onDrop,
+  onDropToGroup,
   onDragEnd,
   onMoveUp,
   onMoveDown,
 }: PlanningGroupTableProps) => {
   const [selectedJob, setSelectedJob] = React.useState<PlanningJob | null>(null);
+  const [isEmptyDropActive, setIsEmptyDropActive] = React.useState(false);
   const isMountedRef = React.useRef(false);
   const groupIndexByJobId = React.useMemo(
     () => new Map(group.map((job, index) => [job.id, index])),
@@ -506,9 +511,44 @@ const PlanningGroupTable = React.memo(({
   if (isCollapsed) return null;
   if (groupJobs.length === 0) {
     return (
-      <Box sx={{ mt: 1, p: 2, border: '1px dashed rgba(15, 23, 42, 0.1)', borderRadius: 1.5, textAlign: 'center' }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          ไม่มีงานในกลุ่มนี้
+      <Box
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = 'move';
+          setIsEmptyDropActive(true);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsEmptyDropActive(false);
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setIsEmptyDropActive(false);
+          onDropToGroup(event, workCenter, groupLabel);
+        }}
+        sx={{
+          mt: 1,
+          minHeight: 88,
+          p: 2,
+          display: 'grid',
+          placeItems: 'center',
+          border: '1.5px dashed',
+          borderColor: isEmptyDropActive ? '#4f46e5' : 'rgba(15, 23, 42, 0.14)',
+          borderRadius: 1.5,
+          textAlign: 'center',
+          bgcolor: isEmptyDropActive ? 'rgba(79, 70, 229, 0.07)' : 'rgba(248, 250, 252, 0.72)',
+          boxShadow: isEmptyDropActive ? 'inset 0 0 0 2px rgba(79, 70, 229, 0.08)' : 'none',
+          transition: 'border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease',
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{ color: isEmptyDropActive ? '#4f46e5' : 'text.secondary', fontWeight: 800 }}
+        >
+          {isEmptyDropActive ? 'วาง Order ในกลุ่มเหล็กนี้' : 'ไม่มีงาน · ลาก Order มาวางที่นี่'}
         </Typography>
       </Box>
     );

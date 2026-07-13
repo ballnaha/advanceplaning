@@ -4,7 +4,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import NotificationSnackbar from './NotificationSnackbar';
 import WorkCenterCard from './WorkCenterCard';
-import SequenceChangesDialog from './SequenceChangesDialog';
+import RoutingBoard from './RoutingBoard';
+import RoutingMatrix from './RoutingMatrix';
+import PlanningChangeReviewDialog from './PlanningChangeReviewDialog';
+import PlanningActionButtons from './PlanningActionButtons';
+import PlanningActionBar from './PlanningActionBar';
 import type { SequenceChange } from './PlanningGroupTable';
 import {
   Alert,
@@ -14,7 +18,6 @@ import {
   Container,
   Divider,
   FormControl,
-  IconButton,
   InputLabel,
   LinearProgress,
   MenuItem,
@@ -23,7 +26,6 @@ import {
   Skeleton,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -50,9 +52,9 @@ type Props = {
 
 const numberFormatter = new Intl.NumberFormat('th-TH');
 const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-const dragAutoScrollEdgePx = 180;
-const dragAutoScrollMaxSpeed = 54;
-const dragWheelScrollMultiplier = 1.35;
+const dragAutoScrollEdgePx = 120;
+const dragAutoScrollMaxSpeed = 22;
+const dragWheelScrollMultiplier = 1;
 
 function formatNumber(value: number) {
   return numberFormatter.format(value);
@@ -455,14 +457,16 @@ export default function PlanningDashboard({ data }: Props) {
     [filteredRawWorkCenters],
   );
 
-  const defaultWorkCenter = sortedWorkCenters[0]?.arbpl ?? 'ALL';
+  const defaultWorkCenter = 'ALL';
   const [selectedWorkCenter, setSelectedWorkCenter] = React.useState(defaultWorkCenter);
+  const [planningView, setPlanningView] = React.useState<'queue' | 'matrix' | 'table'>('queue');
   const deferredWorkCenter = React.useDeferredValue(selectedWorkCenter);
 
 
   const [selectedYear, setSelectedYear] = React.useState<number | 'ALL'>('ALL');
   const [selectedMonth, setSelectedMonth] = React.useState<number | 'ALL'>('ALL');
   const [selectedStatus, setSelectedStatus] = React.useState<string>('ALL');
+  const [orderSearch, setOrderSearch] = React.useState('');
   const [savingWorkCenter, setSavingWorkCenter] = React.useState<string | null>(null);
 
   const yearOptions = React.useMemo(() => {
@@ -486,12 +490,14 @@ export default function PlanningDashboard({ data }: Props) {
   const deferredYear = React.useDeferredValue(selectedYear);
   const deferredMonth = React.useDeferredValue(selectedMonth);
   const deferredStatus = React.useDeferredValue(selectedStatus);
+  const deferredOrderSearch = React.useDeferredValue(orderSearch);
 
   const isWorkCenterPending =
     selectedWorkCenter !== deferredWorkCenter ||
     selectedYear !== deferredYear ||
     selectedMonth !== deferredMonth ||
-    selectedStatus !== deferredStatus;
+    selectedStatus !== deferredStatus ||
+    orderSearch !== deferredOrderSearch;
   const [snackbar, setSnackbar] = React.useState<{
     open: boolean;
     message: string;
@@ -553,15 +559,16 @@ export default function PlanningDashboard({ data }: Props) {
   }, []);
 
   const draggingJobIdRef = React.useRef<number | null>(null);
-  const dragOverRowRef = React.useRef<HTMLTableRowElement | null>(null);
+  const dragOverRowRef = React.useRef<HTMLElement | null>(null);
   const dragOverRowRectRef = React.useRef<DOMRect | null>(null);
+  const dragOverLastUpdateRef = React.useRef(0);
   const dragDropPositionRef = React.useRef<'before' | 'after'>('before');
   const dragAutoScrollFrameRef = React.useRef<number | null>(null);
   const dragAutoScrollPointerYRef = React.useRef<number | null>(null);
   const dragAutoScrollListenerRef = React.useRef<((event: DragEvent) => void) | null>(null);
   const dragWheelScrollListenerRef = React.useRef<((event: WheelEvent) => void) | null>(null);
   const dropConfirmTimerRef = React.useRef<number | null>(null);
-  const dropConfirmRowRef = React.useRef<HTMLTableRowElement | null>(null);
+  const dropConfirmRowRef = React.useRef<HTMLElement | null>(null);
   const dropConfirmFrameRef = React.useRef<number | null>(null);
   const isMountedRef = React.useRef(false);
 
@@ -587,19 +594,22 @@ export default function PlanningDashboard({ data }: Props) {
       }
       if (dragAutoScrollListenerRef.current) {
         window.removeEventListener('dragover', dragAutoScrollListenerRef.current, true);
-        document.removeEventListener('dragover', dragAutoScrollListenerRef.current, true);
         dragAutoScrollListenerRef.current = null;
       }
       if (dragWheelScrollListenerRef.current) {
         window.removeEventListener('wheel', dragWheelScrollListenerRef.current, true);
-        document.removeEventListener('wheel', dragWheelScrollListenerRef.current, true);
         dragWheelScrollListenerRef.current = null;
       }
     };
   }, []);
 
   const filteredJobs = React.useMemo(() => {
+    const normalizedOrderSearch = deferredOrderSearch.trim().toLocaleUpperCase('th-TH');
     return jobs.filter((job) => {
+      if (normalizedOrderSearch && !job.aufnr.toLocaleUpperCase('th-TH').includes(normalizedOrderSearch)) {
+        return false;
+      }
+
       // 1. Year/Month filtering
       const jobStart = job.stdate || '';
       if (!jobStart) {
@@ -628,7 +638,7 @@ export default function PlanningDashboard({ data }: Props) {
 
       return true;
     });
-  }, [jobs, deferredYear, deferredMonth, deferredStatus]);
+  }, [jobs, deferredYear, deferredMonth, deferredStatus, deferredOrderSearch]);
   const lacquerColorMap = React.useMemo(() => {
     const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
 
@@ -713,12 +723,18 @@ export default function PlanningDashboard({ data }: Props) {
     [jobs, sequenceChanges],
   );
 
+  React.useEffect(() => {
+    if (allChangesOpen && !savingAll && allChangedJobs.length === 0) {
+      setAllChangesOpen(false);
+    }
+  }, [allChangesOpen, allChangedJobs.length, savingAll]);
+
   const saveAllDirty = React.useCallback(async () => {
     if (dirtyList.length === 0) return;
     setSavingAll(true);
     setSnackbar({ open: false, message: '', severity: 'success' });
 
-    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null }> = [];
+    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null; arbpl: string }> = [];
 
     for (const wc of dirtyList) {
       const wcJobs = jobs.filter((j) => j.arbpl === wc);
@@ -727,6 +743,7 @@ export default function PlanningDashboard({ data }: Props) {
           id: job.id,
           seqno: index + 1,
           zpg1d: job.zpg1d,
+          arbpl: job.arbpl,
         });
       });
     }
@@ -810,7 +827,7 @@ export default function PlanningDashboard({ data }: Props) {
     dropConfirmFrameRef.current = window.requestAnimationFrame(() => {
       dropConfirmFrameRef.current = null;
       const ids = Array.isArray(jobIds) ? jobIds : [jobIds];
-      const rows: HTMLTableRowElement[] = [];
+      const rows: HTMLElement[] = [];
 
       ids.forEach(id => {
         const row = document.querySelector<HTMLTableRowElement>(`tr[data-job-id="${id}"]`);
@@ -848,7 +865,10 @@ export default function PlanningDashboard({ data }: Props) {
 
       const next = current.map((job) => {
         if (draggedJobIds.includes(job.id)) {
-          return { ...job, zpg1d: targetJobObj.zpg1d };
+          return {
+            ...job,
+            zpg1d: job.arbpl === workCenter ? targetJobObj.zpg1d : job.zpg1d,
+          };
         }
         return job;
       });
@@ -869,7 +889,11 @@ export default function PlanningDashboard({ data }: Props) {
       const insertIndex = newTargetIndex + (position === 'after' ? 1 : 0);
 
       const orderedDraggedJobs = [...draggedJobs].map(job => {
-        return { ...job, zpg1d: targetJobObj.zpg1d, arbpl: workCenter };
+        return {
+          ...job,
+          zpg1d: job.arbpl === workCenter ? targetJobObj.zpg1d : job.zpg1d,
+          arbpl: workCenter,
+        };
       }).sort((a, b) => {
         return current.findIndex(j => j.id === a.id) - current.findIndex(j => j.id === b.id);
       });
@@ -1017,12 +1041,26 @@ export default function PlanningDashboard({ data }: Props) {
     setSavingWorkCenter(workCenter);
     setSnackbar((prev) => ({ ...prev, open: false }));
 
-    const workCenterJobs = jobs.filter((job) => job.arbpl === workCenter);
-    const items = workCenterJobs.map((job, index) => ({
-      id: job.id,
-      seqno: index + 1,
-      zpg1d: job.zpg1d,
-    }));
+    const affectedWorkCenters = new Set([workCenter]);
+    for (const change of sequenceChanges.values()) {
+      if (change.previousWorkCenter === workCenter || change.currentWorkCenter === workCenter) {
+        affectedWorkCenters.add(change.previousWorkCenter);
+        affectedWorkCenters.add(change.currentWorkCenter);
+      }
+    }
+
+    const affectedList = Array.from(affectedWorkCenters);
+    const affectedJobs = jobs.filter((job) => affectedWorkCenters.has(job.arbpl));
+    const items = affectedList.flatMap((currentWorkCenter) =>
+      jobs
+        .filter((job) => job.arbpl === currentWorkCenter)
+        .map((job, index) => ({
+          id: job.id,
+          seqno: index + 1,
+          zpg1d: job.zpg1d,
+          arbpl: job.arbpl,
+        })),
+    );
 
     const response = await fetch('/api/jobs/resequence', {
       method: 'POST',
@@ -1044,25 +1082,29 @@ export default function PlanningDashboard({ data }: Props) {
     }
 
     setInitialJobs((prev) => {
-      const otherJobs = prev.filter((job) => job.arbpl !== workCenter);
-      const updatedJobs = workCenterJobs.map((job, index) => ({
-        ...job,
-        seqno: index + 1,
-      }));
+      const otherJobs = prev.filter((job) => !affectedWorkCenters.has(job.arbpl));
+      const updatedJobs = affectedList.flatMap((currentWorkCenter) =>
+        affectedJobs
+          .filter((job) => job.arbpl === currentWorkCenter)
+          .map((job, index) => ({ ...job, seqno: index + 1 })),
+      );
       return [...otherJobs, ...updatedJobs];
     });
     setSelectedJobIds(new Set());
 
     setSnackbar({
       open: true,
-      message: `บันทึกลำดับของ ${workCenter} ลงฐานข้อมูลแล้ว`,
+      message: affectedList.length > 1
+        ? `บันทึกการย้ายงานระหว่าง ${affectedList.join(' → ')} แล้ว`
+        : `บันทึกลำดับของ ${workCenter} ลงฐานข้อมูลแล้ว`,
       severity: 'success',
     });
-  }, [jobs]);
+  }, [jobs, sequenceChanges]);
 
   const clearDragClasses = React.useCallback(() => {
     dragOverRowRef.current?.classList.remove('drop-target-row', 'drop-before-row', 'drop-after-row');
     dragOverRowRef.current?.removeAttribute('data-drop-label');
+    dragOverRowRef.current?.removeAttribute('data-drop-position');
     dragOverRowRef.current = null;
     dragOverRowRectRef.current = null;
   }, []);
@@ -1095,7 +1137,7 @@ export default function PlanningDashboard({ data }: Props) {
     dragAutoScrollFrameRef.current = window.requestAnimationFrame(tickDragAutoScroll);
   }, []);
 
-  const startDragAutoScroll = React.useCallback((event: React.DragEvent<HTMLTableRowElement>) => {
+  const startDragAutoScroll = React.useCallback((event: React.DragEvent<HTMLElement>) => {
     dragAutoScrollPointerYRef.current = event.clientY;
 
     if (!dragAutoScrollListenerRef.current) {
@@ -1103,7 +1145,6 @@ export default function PlanningDashboard({ data }: Props) {
         dragAutoScrollPointerYRef.current = dragEvent.clientY;
       };
       window.addEventListener('dragover', dragAutoScrollListenerRef.current, { capture: true });
-      document.addEventListener('dragover', dragAutoScrollListenerRef.current, { capture: true });
     }
 
     if (!dragWheelScrollListenerRef.current) {
@@ -1115,7 +1156,6 @@ export default function PlanningDashboard({ data }: Props) {
         scrollElement.scrollLeft += wheelEvent.deltaX;
       };
       window.addEventListener('wheel', dragWheelScrollListenerRef.current, { capture: true, passive: false });
-      document.addEventListener('wheel', dragWheelScrollListenerRef.current, { capture: true, passive: false });
     }
 
     if (dragAutoScrollFrameRef.current === null) {
@@ -1133,18 +1173,16 @@ export default function PlanningDashboard({ data }: Props) {
 
     if (dragAutoScrollListenerRef.current) {
       window.removeEventListener('dragover', dragAutoScrollListenerRef.current, true);
-      document.removeEventListener('dragover', dragAutoScrollListenerRef.current, true);
       dragAutoScrollListenerRef.current = null;
     }
 
     if (dragWheelScrollListenerRef.current) {
       window.removeEventListener('wheel', dragWheelScrollListenerRef.current, true);
-      document.removeEventListener('wheel', dragWheelScrollListenerRef.current, true);
       dragWheelScrollListenerRef.current = null;
     }
   }, []);
 
-  const handleDragStart = React.useCallback((event: React.DragEvent<HTMLTableRowElement>, jobId: number) => {
+  const handleDragStart = React.useCallback((event: React.DragEvent<HTMLElement>, jobId: number) => {
     event.currentTarget.classList.add('dragging-row');
     event.dataTransfer.effectAllowed = 'move';
     draggingJobIdRef.current = jobId;
@@ -1162,25 +1200,48 @@ export default function PlanningDashboard({ data }: Props) {
     });
 
     event.dataTransfer.setData('text/plain', idsToDrag.join(','));
+    const dragPreview = document.createElement('div');
+    dragPreview.textContent = idsToDrag.length > 1
+      ? `ย้าย ${idsToDrag.length} Operations`
+      : 'ย้าย Operation';
+    Object.assign(dragPreview.style, {
+      position: 'fixed',
+      top: '-1000px',
+      left: '-1000px',
+      padding: '8px 12px',
+      borderRadius: '8px',
+      background: '#312e81',
+      color: '#ffffff',
+      font: '700 12px Sarabun, sans-serif',
+      boxShadow: '0 10px 24px rgba(49, 46, 129, 0.24)',
+      pointerEvents: 'none',
+    });
+    document.body.appendChild(dragPreview);
+    event.dataTransfer.setDragImage(dragPreview, 18, 18);
+    window.requestAnimationFrame(() => dragPreview.remove());
     // Highlight all dragging rows in the DOM
     idsToDrag.forEach(id => {
-      const row = document.querySelector(`tr[data-job-id="${id}"]`);
+      const row = document.querySelector(`[data-job-id="${id}"]`);
       if (row) row.classList.add('dragging-row');
     });
   }, [startDragAutoScroll]);
 
-  const handleDrag = React.useCallback((event: React.DragEvent<HTMLTableRowElement>) => {
+  const handleDrag = React.useCallback((event: React.DragEvent<HTMLElement>) => {
     if (event.clientY > 0) {
       dragAutoScrollPointerYRef.current = event.clientY;
     }
   }, []);
 
-  const handleDragOver = React.useCallback((event: React.DragEvent<HTMLTableRowElement>, jobId: number) => {
+  const handleDragOver = React.useCallback((event: React.DragEvent<HTMLElement>, jobId: number) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     dragAutoScrollPointerYRef.current = event.clientY;
 
     if (draggingJobIdRef.current === jobId) return;
+
+    const now = performance.now();
+    if (dragOverRowRef.current === event.currentTarget && now - dragOverLastUpdateRef.current < 16) return;
+    dragOverLastUpdateRef.current = now;
 
     let rect = dragOverRowRectRef.current;
     if (dragOverRowRef.current !== event.currentTarget) {
@@ -1204,17 +1265,18 @@ export default function PlanningDashboard({ data }: Props) {
     }
   }, [clearDragClasses]);
 
-  const handleDragLeave = React.useCallback((event: React.DragEvent<HTMLTableRowElement>) => {
+  const handleDragLeave = React.useCallback((event: React.DragEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
       event.currentTarget.classList.remove('drop-target-row', 'drop-before-row', 'drop-after-row');
       event.currentTarget.removeAttribute('data-drop-label');
+      event.currentTarget.removeAttribute('data-drop-position');
       if (dragOverRowRef.current === event.currentTarget) {
         dragOverRowRef.current = null;
       }
     }
   }, []);
 
-  const handleDrop = React.useCallback((event: React.DragEvent<HTMLTableRowElement>, targetJobId: number, workCenter: string) => {
+  const handleDrop = React.useCallback((event: React.DragEvent<HTMLElement>, targetJobId: number, workCenter: string) => {
     event.preventDefault();
     const dataStr = event.dataTransfer.getData('text/plain');
     let draggedIds = (dataStr || '')
@@ -1236,7 +1298,117 @@ export default function PlanningDashboard({ data }: Props) {
     clearDragClasses();
   }, [reorderJob, clearDragClasses, stopDragAutoScroll]);
 
-  const handleDragEnd = React.useCallback((event: React.DragEvent<HTMLTableRowElement>) => {
+  const handleDropToLane = React.useCallback((event: React.DragEvent<HTMLElement>, workCenter: string) => {
+    event.preventDefault();
+    const dataStr = event.dataTransfer.getData('text/plain');
+    let draggedIds = (dataStr || '')
+      .split(',')
+      .map(Number)
+      .filter(Number.isFinite);
+
+    if (draggedIds.length === 0 && draggingJobIdRef.current !== null) {
+      draggedIds = [draggingJobIdRef.current];
+    }
+
+    if (draggedIds.length > 0) {
+      setJobs((current) => {
+        const draggedJobs = current.filter((job) => draggedIds.includes(job.id));
+        if (draggedJobs.length === 0) return current;
+
+        const remaining = current.filter((job) => !draggedIds.includes(job.id));
+        const targetJobs = remaining.filter((job) => job.arbpl === workCenter);
+        const movedJobs = draggedJobs.map((job) => ({ ...job, arbpl: workCenter }));
+        const firstTargetIndex = remaining.findIndex((job) => job.arbpl === workCenter);
+        const jobsOutsideTarget = remaining.filter((job) => job.arbpl !== workCenter);
+        const insertAt = firstTargetIndex < 0
+          ? jobsOutsideTarget.length
+          : remaining
+              .slice(0, firstTargetIndex)
+              .filter((job) => job.arbpl !== workCenter).length;
+
+        const next = [...jobsOutsideTarget];
+        next.splice(insertAt, 0, ...targetJobs, ...movedJobs);
+        return next;
+      });
+      setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
+      showDropConfirmation(draggedIds, 'after');
+    }
+
+    draggingJobIdRef.current = null;
+    stopDragAutoScroll();
+    clearDragClasses();
+  }, [clearDragClasses, showDropConfirmation, stopDragAutoScroll]);
+
+  const handleDropToProductGroup = React.useCallback((
+    event: React.DragEvent<HTMLElement>,
+    workCenter: string,
+    groupLabel: string,
+  ) => {
+    event.preventDefault();
+    const dataStr = event.dataTransfer.getData('text/plain');
+    let draggedIds = (dataStr || '')
+      .split(',')
+      .map(Number)
+      .filter(Number.isFinite);
+
+    if (draggedIds.length === 0 && draggingJobIdRef.current !== null) {
+      draggedIds = [draggingJobIdRef.current];
+    }
+
+    if (draggedIds.length > 0) {
+      setJobs((current) => {
+        const draggedIdSet = new Set(draggedIds);
+        const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
+        if (draggedJobs.length === 0) return current;
+
+        const remaining = current.filter((job) => !draggedIdSet.has(job.id));
+        const targetWorkCenterJobs = remaining.filter((job) => job.arbpl === workCenter);
+        const targetGroupId = getJobGroupId(groupLabel);
+        const targetGroupOrder = getJobGroupSortOrder(groupLabel);
+        const lastJobInGroup = targetWorkCenterJobs.reduce(
+          (lastIndex, job, index) => (
+            getJobGroupId(job.zpg1d) === targetGroupId ? index : lastIndex
+          ),
+          -1,
+        );
+        const firstLaterGroup = targetWorkCenterJobs.findIndex(
+          (job) => getJobGroupSortOrder(job.zpg1d) > targetGroupOrder,
+        );
+        const insertInWorkCenterAt = lastJobInGroup >= 0
+          ? lastJobInGroup + 1
+          : firstLaterGroup >= 0
+            ? firstLaterGroup
+            : targetWorkCenterJobs.length;
+        const movedJobs = draggedJobs.map((job) => ({
+          ...job,
+          arbpl: workCenter,
+          zpg1d: groupLabel,
+        }));
+
+        targetWorkCenterJobs.splice(insertInWorkCenterAt, 0, ...movedJobs);
+
+        const firstTargetIndex = current.findIndex((job) => job.arbpl === workCenter);
+        const jobsOutsideTarget = remaining.filter((job) => job.arbpl !== workCenter);
+        const insertAt = firstTargetIndex < 0
+          ? jobsOutsideTarget.length
+          : current
+              .slice(0, firstTargetIndex)
+              .filter((job) => job.arbpl !== workCenter && !draggedIdSet.has(job.id))
+              .length;
+        const next = [...jobsOutsideTarget];
+        next.splice(insertAt, 0, ...targetWorkCenterJobs);
+        return next;
+      });
+      setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
+      showDropConfirmation(draggedIds, 'after');
+    }
+
+    draggingJobIdRef.current = null;
+    stopDragAutoScroll();
+    clearDragClasses();
+  }, [clearDragClasses, showDropConfirmation, stopDragAutoScroll]);
+
+  const handleDragEnd = React.useCallback((event: React.DragEvent<HTMLElement>) => {
     event.currentTarget.classList.remove('dragging-row');
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
@@ -1251,7 +1423,11 @@ export default function PlanningDashboard({ data }: Props) {
       <Box
         sx={{ minHeight: '100vh', bgcolor: 'background.default', color: 'text.primary', py: 4 }}
       >
-        <Container maxWidth="xl">
+        <Container
+          maxWidth={false}
+          disableGutters
+          sx={{ px: { xs: 1.5, sm: 2, lg: 3, xl: 4 } }}
+        >
           <Stack spacing={3}>
             <Paper
               sx={{
@@ -1591,6 +1767,24 @@ export default function PlanningDashboard({ data }: Props) {
                       ตัวกรองข้อมูล (Filters)
                     </Typography>
 
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="search"
+                      label="ค้นหา Order Number"
+                      placeholder="เช่น 45000123"
+                      value={orderSearch}
+                      onChange={(event) => setOrderSearch(event.target.value)}
+                      slotProps={{
+                        htmlInput: {
+                          autoComplete: 'off',
+                          inputMode: 'search',
+                          'aria-label': 'ค้นหาด้วย Order Number',
+                        },
+                      }}
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: '#ffffff' } }}
+                    />
+
                     {/* Year/Month Select Filters */}
                     <Stack direction="row" spacing={1.5}>
                       <FormControl size="small" fullWidth>
@@ -1668,13 +1862,15 @@ export default function PlanningDashboard({ data }: Props) {
                           selectedWorkCenter === defaultWorkCenter &&
                           selectedYear === 'ALL' &&
                           selectedMonth === 'ALL' &&
-                          selectedStatus === 'ALL'
+                          selectedStatus === 'ALL' &&
+                          orderSearch === ''
                         }
                         onClick={() => {
                           setSelectedWorkCenter(defaultWorkCenter);
                           setSelectedYear('ALL');
                           setSelectedMonth('ALL');
                           setSelectedStatus('ALL');
+                          setOrderSearch('');
                         }}
                         sx={{
                           borderRadius: '10px',
@@ -1763,51 +1959,188 @@ export default function PlanningDashboard({ data }: Props) {
               </Stack>
             </Box>
 
-            <Stack
-              spacing={2}
+            <Paper
+              elevation={0}
+              sx={{
+                p: { xs: 1.5, md: 2 },
+                borderRadius: 3,
+                border: '1px solid rgba(15, 23, 42, 0.06)',
+                bgcolor: '#ffffff',
+              }}
+            >
+              <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={1.5}
+                sx={{ justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' } }}
+              >
+                <Box>
+                  <Typography variant={'h6'} sx={{ fontWeight: 950, color: '#172033', letterSpacing: '-0.02em' }}>
+                    Production Routing
+                  </Typography>
+                  <Typography variant={'body2'} sx={{ color: 'text.secondary', fontWeight: 650 }}>
+                    ลาก Order ขึ้นลงเพื่อจัดคิว หรือลากข้ามคอลัมน์เพื่อเปลี่ยน Work Center
+                  </Typography>
+                </Box>
+                <Stack
+                  direction={{ xs: 'column', xl: 'row' }}
+                  spacing={1.25}
+                  sx={{ alignItems: { xs: 'stretch', xl: 'center' } }}
+                >
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: { xs: 'space-between', xl: 'initial' } }}>
+                    <Box>
+                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 700 }}>
+                        จัดการแผน
+                      </Typography>
+                      <Typography variant="caption" sx={{ display: 'block', color: '#172033', fontWeight: 900 }}>
+                        {deferredWorkCenter === 'ALL' ? 'ทุก Work Center' : 'WC ' + deferredWorkCenter}
+                      </Typography>
+                    </Box>
+                    <PlanningActionButtons
+                      isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
+                      isSaving={savingAll || savingWorkCenter !== null}
+                      onAutoArrange={() => {
+                        visibleWorkCenters.forEach((item) => {
+                          const workCenterJobs = groupedJobs[item.arbpl] ?? [];
+                          autoArrange(item.arbpl, workCenterJobs.map((job) => job.id));
+                        });
+                      }}
+                      onReset={() => {
+                        visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
+                      }}
+                      onSave={() => {
+                        if (deferredWorkCenter === 'ALL') {
+                          void saveAllDirty();
+                        } else {
+                          void saveSequence(deferredWorkCenter);
+                        }
+                      }}
+                    />
+                  </Stack>
+                  <Box sx={{ display: 'flex', p: 0.5, bgcolor: '#f1f5f9', borderRadius: 2, gap: 0.5 }}>
+                  <Button
+                    size={'small'}
+                    onClick={() => setPlanningView('queue')}
+                    sx={{
+                      px: 2,
+                      borderRadius: 1.5,
+                      fontWeight: 900,
+                      color: planningView === 'queue' ? '#ffffff' : '#64748b',
+                      bgcolor: planningView === 'queue' ? '#4f46e5' : 'transparent',
+                      boxShadow: planningView === 'queue' ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none',
+                      '&:hover': { bgcolor: planningView === 'queue' ? '#4338ca' : 'rgba(15, 23, 42, 0.04)' },
+                    }}
+                  >
+                    Compact Queue
+                  </Button>
+                  <Button
+                    size={'small'}
+                    onClick={() => setPlanningView('matrix')}
+                    sx={{
+                      px: 2,
+                      borderRadius: 1.5,
+                      fontWeight: 900,
+                      color: planningView === 'matrix' ? '#ffffff' : '#64748b',
+                      bgcolor: planningView === 'matrix' ? '#0891b2' : 'transparent',
+                      boxShadow: planningView === 'matrix' ? '0 4px 12px rgba(8, 145, 178, 0.2)' : 'none',
+                      '&:hover': { bgcolor: planningView === 'matrix' ? '#0e7490' : 'rgba(15, 23, 42, 0.04)' },
+                    }}
+                  >
+                    Routing Matrix
+                  </Button>
+                  <Button
+                    size={'small'}
+                    onClick={() => setPlanningView('table')}
+                    sx={{
+                      px: 2,
+                      borderRadius: 1.5,
+                      fontWeight: 900,
+                      color: planningView === 'table' ? '#ffffff' : '#64748b',
+                      bgcolor: planningView === 'table' ? '#334155' : 'transparent',
+                      boxShadow: planningView === 'table' ? '0 4px 12px rgba(51, 65, 85, 0.18)' : 'none',
+                      '&:hover': { bgcolor: planningView === 'table' ? '#1e293b' : 'rgba(15, 23, 42, 0.04)' },
+                    }}
+                  >
+                    Detailed Table
+                  </Button>
+                  </Box>
+                </Stack>
+              </Stack>
+            </Paper>
+
+            <Box
               sx={{
                 opacity: isWorkCenterPending ? 0.55 : 1,
                 pointerEvents: isWorkCenterPending ? 'none' : 'auto',
                 transition: 'all 180ms ease-in-out',
               }}
             >
-              {isWorkCenterPending && (
-                <LinearProgress sx={{ height: 4, borderRadius: 2, mb: 1 }} />
-              )}
-              {visibleWorkCenters.map((item) => {
-                const workCenter = item.arbpl;
-                const group = groupedJobs[workCenter];
-                if (!group) return null;
+              {isWorkCenterPending && <LinearProgress sx={{ height: 4, borderRadius: 2, mb: 1 }} />}
 
-                return (
-                  <Box key={workCenter}>
-                    <WorkCenterCard
-                      workCenter={workCenter}
-                      group={group}
-                      isDirty={dirtyWorkCenters.get(workCenter) ?? false}
-                      isSaving={savingWorkCenter === workCenter}
-                      lacquerColorMap={lacquerColorMap}
-                      collapsedGroups={collapsedGroups}
-                      selectedJobIds={selectedJobIds}
-                      sequenceChanges={sequenceChanges}
-                      onToggleSelect={handleToggleSelect}
-                      onToggleSelectAllGroup={handleToggleSelectAllGroup}
-                      onAutoArrange={autoArrange}
-                      onResetToInitial={resetWorkCenterToInitial}
-                      onSave={saveSequence}
-                      onToggleCollapse={toggleGroupCollapse}
-                      onDragStart={handleDragStart}
-                      onDrag={handleDrag}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onDragEnd={handleDragEnd}
-                      onMoveJobOneStep={moveJobOneStep}
-                    />
-                  </Box>
-                );
-              })}
-            </Stack>
+              {planningView === 'queue' ? (
+                <RoutingBoard
+                  workCenters={visibleWorkCenters}
+                  groupedJobs={groupedJobs}
+                  dirtyWorkCenters={dirtyWorkCenters}
+                  selectedJobIds={selectedJobIds}
+                  lacquerColorMap={lacquerColorMap}
+                  onToggleSelect={handleToggleSelect}
+                  onDragStart={handleDragStart}
+                  onDrag={handleDrag}
+                  onDragOverJob={handleDragOver}
+                  onDragLeaveJob={handleDragLeave}
+                  onDropOnJob={handleDrop}
+                  onDropToLane={handleDropToLane}
+                  onDragEnd={handleDragEnd}
+                />
+              ) : planningView === 'matrix' ? (
+                <RoutingMatrix
+                  workCenters={visibleWorkCenters}
+                  groupedJobs={groupedJobs}
+                  selectedJobIds={selectedJobIds}
+                  lacquerColorMap={lacquerColorMap}
+                  onToggleSelect={handleToggleSelect}
+                  onDragStart={handleDragStart}
+                  onDrag={handleDrag}
+                  onDragOverJob={handleDragOver}
+                  onDragLeaveJob={handleDragLeave}
+                  onDropOnJob={handleDrop}
+                  onDropToLane={handleDropToLane}
+                  onDragEnd={handleDragEnd}
+                />
+              ) : (
+                <Stack spacing={2}>
+                  {visibleWorkCenters.map((item) => {
+                    const workCenter = item.arbpl;
+                    const group = groupedJobs[workCenter];
+                    if (!group) return null;
+
+                    return (
+                      <Box key={workCenter}>
+                        <WorkCenterCard
+                          workCenter={workCenter}
+                          group={group}
+                          lacquerColorMap={lacquerColorMap}
+                          collapsedGroups={collapsedGroups}
+                          selectedJobIds={selectedJobIds}
+                          sequenceChanges={sequenceChanges}
+                          onToggleSelect={handleToggleSelect}
+                          onToggleSelectAllGroup={handleToggleSelectAllGroup}
+                          onToggleCollapse={toggleGroupCollapse}
+                          onDragStart={handleDragStart}
+                          onDrag={handleDrag}
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                          onDropToGroup={handleDropToProductGroup}
+                          onDragEnd={handleDragEnd}
+                          onMoveJobOneStep={moveJobOneStep}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Box>
 
             <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'right' }}>
               แสดง {formatNumber(visibleJobCount)} แถว / อัปเดตข้อมูลหน้าเว็บ {new Date(data.generatedAt).toLocaleString('th-TH')}
@@ -1815,120 +2148,35 @@ export default function PlanningDashboard({ data }: Props) {
           </Stack>
         </Container>
 
-        {/* Floating Save Balloon */}
+        {/* Floating Action Bar */}
         {dirtyList.length > 0 && (
-          <Box
-            sx={{
-              position: 'fixed',
-              bottom: 32,
-              right: 32,
-              zIndex: 1100,
-              animation: 'slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              '@keyframes slideUp': {
-                '0%': { transform: 'translateY(100px) scale(0.9)', opacity: 0 },
-                '100%': { transform: 'translateY(0) scale(1)', opacity: 1 },
-              },
+          <PlanningActionBar
+            changedJobCount={allChangedJobs.length}
+            dirtyWorkCenterCount={dirtyList.length}
+            isSaving={savingAll || savingWorkCenter !== null}
+            onReviewChanges={() => setAllChangesOpen(true)}
+            onAutoArrange={() => {
+              visibleWorkCenters.forEach((item) => {
+                const workCenterJobs = groupedJobs[item.arbpl] ?? [];
+                autoArrange(item.arbpl, workCenterJobs.map((job) => job.id));
+              });
             }}
-          >
-            <Paper
-              elevation={0}
-              sx={{
-                p: '10px 12px 10px 20px',
-                borderRadius: '999px',
-                bgcolor: 'background.paper',
-                border: '1px solid',
-                borderColor: 'rgba(79, 70, 229, 0.15)',
-                boxShadow: '0 20px 40px rgba(79, 70, 229, 0.12), 0 8px 16px rgba(0, 0, 0, 0.04)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2.5,
-                backdropFilter: 'blur(12px)',
-                backgroundColor: 'rgba(255, 255, 255, 0.94)',
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Box
-                  sx={{
-                    width: 8,
-                    height: 8,
-                    bgcolor: 'primary.main',
-                    borderRadius: '50%',
-                    boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.4)',
-                    animation: 'pulse 2s infinite ease-in-out',
-                    '@keyframes pulse': {
-                      '0%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.5)' },
-                      '70%': { transform: 'scale(1)', boxShadow: '0 0 0 8px rgba(79, 70, 229, 0)' },
-                      '100%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(79, 70, 229, 0)' },
-                    },
-                  }}
-                />
-                <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', fontSize: '0.875rem', letterSpacing: '-0.01em' }}>
-                  พบการจัดคิวใหม่
-                </Typography>
-              </Box>
-              <Tooltip title="ดูการเปลี่ยนแปลงทั้งหมด" arrow>
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={allChangedJobs.length === 0}
-                    onClick={() => setAllChangesOpen(true)}
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      border: '1px solid rgba(245, 158, 11, 0.32)',
-                      bgcolor: 'rgba(245, 158, 11, 0.1)',
-                      color: '#92400e',
-                      '&:hover': {
-                        bgcolor: 'rgba(245, 158, 11, 0.18)',
-                      },
-                      '&.Mui-disabled': {
-                        borderColor: 'rgba(15, 23, 42, 0.08)',
-                        bgcolor: 'rgba(15, 23, 42, 0.04)',
-                      },
-                    }}
-                  >
-                    <TaskSquare size="18" color="currentColor" variant="Bold" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Button
-                variant="contained"
-                disabled={savingAll}
-                onClick={saveAllDirty}
-                sx={{
-                  borderRadius: '999px',
-                  fontWeight: 850,
-                  px: 3,
-                  py: 1,
-                  fontSize: '0.825rem',
-                  bgcolor: 'primary.main',
-                  color: '#ffffff',
-                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
-                  transition: 'all 0.2s ease-in-out',
-                  '&:hover': {
-                    bgcolor: 'primary.dark',
-                    boxShadow: '0 6px 16px rgba(79, 70, 229, 0.35)',
-                    transform: 'translateY(-1px)',
-                  },
-                  '&:active': {
-                    transform: 'translateY(0)',
-                  },
-                }}
-              >
-                {savingAll ? 'SAVING...' : 'SAVE'}
-              </Button>
-            </Paper>
-          </Box>
+            onReset={() => {
+              visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
+            }}
+            onSave={saveAllDirty}
+          />
         )}
       </Box>
-      <SequenceChangesDialog
-        open={allChangesOpen}
-        onClose={() => setAllChangesOpen(false)}
-        changes={allChangedJobs}
-        title="การเปลี่ยนแปลงทั้งหมด"
-        description="รายการที่จะถูกบันทึกเมื่อกดบันทึกทั้งหมด"
-        showWorkCenter
-      />
+{allChangesOpen && (
+        <PlanningChangeReviewDialog
+          open
+          onClose={() => setAllChangesOpen(false)}
+          changes={allChangedJobs}
+          isPublishing={savingAll}
+          onPublish={saveAllDirty}
+        />
+      )}
       <NotificationSnackbar
         open={snackbar.open}
         message={snackbar.message}

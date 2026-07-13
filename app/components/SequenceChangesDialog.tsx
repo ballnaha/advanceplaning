@@ -18,6 +18,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from '@mui/material';
 import type { PlanningJob } from '@/lib/planning';
@@ -37,6 +38,8 @@ type SequenceChangesDialogProps = {
   showWorkCenter?: boolean;
   title: string;
   onClose: () => void;
+  isPublishing?: boolean;
+  onPublish?: () => void | Promise<void>;
 };
 
 function formatNumber(value: number) {
@@ -44,10 +47,10 @@ function formatNumber(value: number) {
 }
 
 function formatChangeDirection(change: SequenceChange) {
+  if (change.previousWorkCenter !== change.currentWorkCenter) return 'ย้าย Work Center';
   const diff = change.previousSeq - change.currentSeq;
   if (diff > 0) return `ขึ้น ${formatNumber(diff)} ลำดับ`;
   if (diff < 0) return `ลง ${formatNumber(Math.abs(diff))} ลำดับ`;
-  if (change.previousWorkCenter !== change.currentWorkCenter) return 'ย้าย Work center';
   if (change.previousGroup !== change.currentGroup) return 'เปลี่ยนกลุ่ม';
   return 'เปลี่ยนแปลง';
 }
@@ -59,13 +62,34 @@ export default function SequenceChangesDialog({
   showWorkCenter = false,
   title,
   onClose,
+  isPublishing = false,
+  onPublish,
 }: SequenceChangesDialogProps) {
+  const [changeFilter, setChangeFilter] = React.useState<'ALL' | 'WORK_CENTER' | 'SEQUENCE' | 'GROUP'>('ALL');
+  const [orderSearch, setOrderSearch] = React.useState('');
+  const stats = React.useMemo(() => ({
+    workCenterMoves: changes.filter(({ change }) => change.previousWorkCenter !== change.currentWorkCenter).length,
+    sequenceMoves: changes.filter(({ change }) => change.previousSeq !== change.currentSeq).length,
+    groupMoves: changes.filter(({ change }) => change.previousGroup !== change.currentGroup).length,
+    affectedWorkCenters: new Set(changes.flatMap(({ change }) => [change.previousWorkCenter, change.currentWorkCenter])).size,
+  }), [changes]);
+  const filteredChanges = React.useMemo(() => {
+    const query = orderSearch.trim().toLocaleUpperCase('th-TH');
+    return changes.filter(({ job, change }) => {
+      if (query && !job.aufnr.toLocaleUpperCase('th-TH').includes(query)) return false;
+      if (changeFilter === 'WORK_CENTER') return change.previousWorkCenter !== change.currentWorkCenter;
+      if (changeFilter === 'SEQUENCE') return change.previousSeq !== change.currentSeq;
+      if (changeFilter === 'GROUP') return change.previousGroup !== change.currentGroup;
+      return true;
+    });
+  }, [changeFilter, changes, orderSearch]);
+
   return (
     <Dialog
       open={open}
       onClose={onClose}
       fullWidth
-      maxWidth="md"
+      maxWidth={showWorkCenter ? 'lg' : 'md'}
       disableScrollLock
       keepMounted
       transitionDuration={0}
@@ -128,6 +152,63 @@ export default function SequenceChangesDialog({
           </Typography>
         ) : (
           <Box sx={{ p: 2.5 }}>
+            {showWorkCenter && (
+              <>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+                    gap: 1,
+                    mb: 1.5,
+                  }}
+                >
+                  {[
+                    { label: 'รายการเปลี่ยนแปลง', value: changes.length, color: '#4f46e5' },
+                    { label: 'ย้าย Work Center', value: stats.workCenterMoves, color: '#dc2626' },
+                    { label: 'เปลี่ยนลำดับ', value: stats.sequenceMoves, color: '#d97706' },
+                    { label: 'Work Center ที่กระทบ', value: stats.affectedWorkCenters, color: '#0891b2' },
+                  ].map((item) => (
+                    <Paper key={item.label} elevation={0} sx={{ p: 1.25, border: '1px solid rgba(15, 23, 42, 0.07)', borderRadius: 1.5, bgcolor: '#ffffff' }}>
+                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 750 }}>{item.label}</Typography>
+                      <Typography variant="h6" sx={{ mt: 0.2, color: item.color, fontWeight: 950 }}>{formatNumber(item.value)}</Typography>
+                    </Paper>
+                  ))}
+                </Box>
+
+                <Paper elevation={0} sx={{ p: 1.25, mb: 1.5, border: '1px solid rgba(15, 23, 42, 0.07)', borderRadius: 1.5, bgcolor: '#ffffff' }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' } }}>
+                    <Stack direction="row" spacing={0.6} sx={{ flexWrap: 'wrap', rowGap: 0.6 }}>
+                      {[
+                        { value: 'ALL' as const, label: `ทั้งหมด ${changes.length}` },
+                        { value: 'WORK_CENTER' as const, label: `ย้ายเครื่อง ${stats.workCenterMoves}` },
+                        { value: 'SEQUENCE' as const, label: `เปลี่ยนคิว ${stats.sequenceMoves}` },
+                        { value: 'GROUP' as const, label: `เปลี่ยนกลุ่ม ${stats.groupMoves}` },
+                      ].map((filter) => (
+                        <Chip
+                          key={filter.value}
+                          clickable
+                          size="small"
+                          label={filter.label}
+                          color={changeFilter === filter.value ? 'primary' : 'default'}
+                          variant={changeFilter === filter.value ? 'filled' : 'outlined'}
+                          onClick={() => setChangeFilter(filter.value)}
+                          sx={{ fontWeight: 850 }}
+                        />
+                      ))}
+                    </Stack>
+                    <TextField
+                      size="small"
+                      type="search"
+                      value={orderSearch}
+                      onChange={(event) => setOrderSearch(event.target.value)}
+                      placeholder="ค้นหา Order Number"
+                      sx={{ minWidth: { md: 230 }, '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+                    />
+                  </Stack>
+                </Paper>
+              </>
+            )}
+
             <TableContainer
               component={Paper}
               elevation={0}
@@ -152,11 +233,19 @@ export default function SequenceChangesDialog({
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {changes.map(({ job, change }) => (
+                  {filteredChanges.map(({ job, change }) => (
                     <TableRow key={job.id}>
                       {showWorkCenter && (
                         <TableCell>
-                          <Chip size="small" label={change.currentWorkCenter} />
+                          <Stack spacing={0.35} sx={{ alignItems: 'flex-start' }}>
+                            <Chip size="small" variant="outlined" label={change.previousWorkCenter} sx={{ height: 20, fontSize: '0.66rem' }} />
+                            {change.previousWorkCenter !== change.currentWorkCenter && (
+                              <>
+                                <Typography variant="caption" sx={{ pl: 1, color: '#94a3b8', fontWeight: 900, lineHeight: 1 }}>↓</Typography>
+                                <Chip size="small" color="primary" label={change.currentWorkCenter} sx={{ height: 20, fontSize: '0.66rem' }} />
+                              </>
+                            )}
+                          </Stack>
                         </TableCell>
                       )}
                       <TableCell>
@@ -189,14 +278,36 @@ export default function SequenceChangesDialog({
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filteredChanges.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={showWorkCenter ? 7 : 6} align="center" sx={{ py: 4, color: 'text.secondary', fontWeight: 750 }}>
+                        ไม่พบรายการที่ตรงกับตัวกรอง
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
           </Box>
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 2.5, py: 1.25, borderTop: '1px solid rgba(15, 23, 42, 0.08)', bgcolor: '#ffffff' }}>
-        <Button onClick={onClose}>ปิด</Button>
+      <DialogActions sx={{ px: 2.5, py: 1.25, borderTop: '1px solid rgba(15, 23, 42, 0.08)', bgcolor: '#ffffff', justifyContent: 'space-between' }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
+          แสดง {formatNumber(filteredChanges.length)} จาก {formatNumber(changes.length)} รายการ
+        </Typography>
+        <Stack direction="row" spacing={1}>
+          <Button onClick={onClose} disabled={isPublishing}>กลับไปแก้ไข</Button>
+          {onPublish && (
+            <Button
+              variant="contained"
+              disabled={changes.length === 0 || isPublishing}
+              onClick={onPublish}
+              sx={{ px: 2.5, fontWeight: 900, boxShadow: 'none' }}
+            >
+              {isPublishing ? 'Publishing…' : `Publish ${formatNumber(changes.length)} changes`}
+            </Button>
+          )}
+        </Stack>
       </DialogActions>
     </Dialog>
   );

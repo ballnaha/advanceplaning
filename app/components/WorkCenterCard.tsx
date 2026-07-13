@@ -3,7 +3,6 @@
 import * as React from 'react';
 import {
   Box,
-  Button,
   Chip,
   Divider,
   Paper,
@@ -46,23 +45,19 @@ function formatNumber(value: number) {
 interface WorkCenterCardProps {
   workCenter: string;
   group: PlanningJob[];
-  isDirty: boolean;
-  isSaving: boolean;
   lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
   collapsedGroups: Record<string, boolean>;
   selectedJobIds: Set<number>;
   sequenceChanges: Map<number, SequenceChange>;
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
-  onAutoArrange: (workCenter: string, jobIds: number[]) => void;
-  onResetToInitial: (workCenter: string) => void;
-  onSave: (workCenter: string) => void;
   onToggleCollapse: (key: string) => void;
   onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
   onDrag: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onDragOver: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
   onDragLeave: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onDrop: (event: React.DragEvent<HTMLTableRowElement>, targetJobId: number, workCenter: string) => void;
+  onDropToGroup: (event: React.DragEvent<HTMLElement>, workCenter: string, groupLabel: string) => void;
   onDragEnd: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onMoveJobOneStep: (workCenter: string, jobId: number, direction: 'up' | 'down') => void;
 }
@@ -70,23 +65,19 @@ interface WorkCenterCardProps {
 const WorkCenterCard = React.memo(({
   workCenter,
   group,
-  isDirty,
-  isSaving,
   lacquerColorMap,
   collapsedGroups,
   selectedJobIds,
   sequenceChanges,
   onToggleSelect,
   onToggleSelectAllGroup,
-  onAutoArrange,
-  onResetToInitial,
-  onSave,
   onToggleCollapse,
   onDragStart,
   onDrag,
   onDragOver,
   onDragLeave,
   onDrop,
+  onDropToGroup,
   onDragEnd,
   onMoveJobOneStep,
 }: WorkCenterCardProps) => {
@@ -177,27 +168,6 @@ const WorkCenterCard = React.memo(({
             />
           )}
         </Box>
-        <Stack direction="row" spacing={1}>
-          <Button size="small" variant="outlined" onClick={() => onAutoArrange(workCenter, group.map((job) => job.id))}>
-            จัดลำดับงานด่วน
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => onResetToInitial(workCenter)}
-          >
-            DEFAULT SETTING
-          </Button>
-          <Button
-            size="small"
-            variant={isDirty ? 'contained' : 'outlined'}
-            disabled={isSaving}
-            onClick={() => onSave(workCenter)}
-            sx={{ boxShadow: 'none' }}
-          >
-            {isSaving ? 'SAVING...' : 'SAVE'}
-          </Button>
-        </Stack>
       </Stack>
       <Divider sx={{ mb: 2 }} />
 
@@ -276,6 +246,7 @@ const WorkCenterCard = React.memo(({
             <PlanningGroupTable
               groupJobs={groupJobs}
               group={group}
+              groupLabel={groupDef.label}
               workCenter={workCenter}
               isCollapsed={isCollapsed}
               lacquerColorMap={lacquerColorMap}
@@ -287,6 +258,7 @@ const WorkCenterCard = React.memo(({
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
               onDrop={onDrop}
+              onDropToGroup={onDropToGroup}
               onDragEnd={onDragEnd}
               onMoveUp={handleMoveUp}
               onMoveDown={handleMoveDown}
@@ -306,8 +278,6 @@ const WorkCenterCard = React.memo(({
   );
 }, (prevProps, nextProps) => {
   return (
-    prevProps.isDirty === nextProps.isDirty &&
-    prevProps.isSaving === nextProps.isSaving &&
     ZPG1D_GROUPS.every((groupDef) => {
       const key = `${prevProps.workCenter}|${groupDef.id}`;
       return prevProps.collapsedGroups[key] === nextProps.collapsedGroups[key];

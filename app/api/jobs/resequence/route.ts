@@ -4,6 +4,7 @@ type ResequenceItem = {
   id: number;
   seqno: number;
   zpg1d?: string | null;
+  arbpl?: string;
 };
 
 export async function POST(request: Request) {
@@ -32,6 +33,21 @@ export async function POST(request: Request) {
     for (const item of items) {
       sql += 'WHEN ? THEN ? ';
       params.push(item.id, item.zpg1d ?? null);
+    }
+    sql += 'END';
+  }
+
+  // Persist cross-work-center moves made on the routing board.
+  const hasArbpl = items.some((item) => item.arbpl !== undefined);
+  if (hasArbpl) {
+    if (items.some((item) => !item.arbpl?.trim())) {
+      return Response.json({ error: 'arbpl must not be empty' }, { status: 400 });
+    }
+
+    sql += ', arbpl = CASE id ';
+    for (const item of items) {
+      sql += 'WHEN ? THEN ? ';
+      params.push(item.id, item.arbpl!.trim());
     }
     sql += 'END';
   }
