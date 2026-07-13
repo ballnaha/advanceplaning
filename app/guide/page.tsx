@@ -129,7 +129,7 @@ export default function GuidePage() {
                   </Typography>
                   <Box component="ul" sx={{ pl: 2, m: 0, '& li': { mb: 1, color: 'text.secondary', fontSize: '0.875rem' } }}>
                     <li>
-                      <strong>การคัดกรองข้อมูล:</strong> คุณสามารถกรองแผนตามวันที่ผลิต และเลือกเจาะจงชนิดของแลกเกอร์ (L/Q) ได้ผ่านตัวควบคุมในแถบด้านซ้ายมือ
+                      <strong>การคัดกรองข้อมูล:</strong> คุณสามารถเลือกกรองแผนการทำงานเฉพาะปีและเดือนที่ต้องการวางแผนได้ผ่านตัวเลือกปีและเดือนในแถบตัวกรองด้านซ้ายมือ
                     </li>
                     <li>
                       <strong>สถานะการแก้ไข (Dirty State):</strong> เมื่อใดที่มีการลากวางปรับลำดับงานค้างอยู่ ระบบจะแสดงบอลลูนลอยตัวสีน้ำเงินที่มุมขวาล่างเพื่อแจ้งเตือนว่ามีคิวรอการบันทึก
@@ -138,7 +138,7 @@ export default function GuidePage() {
                       <strong>การตรวจสอบผลการเปลี่ยนคิว:</strong> กดไอคอนรูปเอกสารในบอลลูนเพื่อตรวจสอบว่ามีงานชิ้นใดบ้างที่มีตำแหน่งหรือกลุ่มผิดแปลกไปจากเดิม
                     </li>
                     <li>
-                      <strong>บันทึกลงฐานข้อมูล:</strong> กดปุ่ม <strong>"บันทึกทั้งหมด"</strong> หรือ <strong>"บันทึกลง DB"</strong> เพื่ออัปเดตข้อมูลเข้าไปยัง MySQL (ผ่าน API /api/jobs/resequence แบบเป็นกลุ่มเพื่อความรวดเร็ว)
+                      <strong>บันทึกลงฐานข้อมูล:</strong> กดปุ่ม <strong>"SAVE"</strong> หรือ <strong>"SAVE"</strong> เพื่ออัปเดตข้อมูลเข้าไปยัง MySQL (ผ่าน API /api/jobs/resequence แบบเป็นกลุ่มเพื่อความรวดเร็ว)
                     </li>
                   </Box>
                 </Stack>
@@ -155,7 +155,7 @@ export default function GuidePage() {
 
           <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 2 }}>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4 }}>
-              เมื่อคุณกดปุ่ม <strong>"จัดเรียงเครื่องนี้"</strong> หรือ <strong>"จัดเรียงทั้งหมด"</strong> ระบบจะนำสูตรคัดเลือกและเรียงลำดับซ้อนกัน 5 ลำดับชั้นมาเรียงคิวคัดกรองโดยไม่ต้องจัดมือตามหลักเกณฑ์นี้:
+              เมื่อคุณกดปุ่ม <strong>"จัดลำดับงานด่วน"</strong> หรือ <strong>"จัดเรียงทั้งหมด"</strong> ระบบจะนำสูตรคัดเลือกและเรียงลำดับซ้อนกัน 5 ลำดับชั้นมาเรียงคิวคัดกรองโดยไม่ต้องจัดมือตามหลักเกณฑ์นี้:
             </Typography>
 
             {/* Visual Flowchart */}
@@ -171,7 +171,7 @@ export default function GuidePage() {
                   step: 'ขั้นตอนที่ 2',
                   title: 'จัดกลุ่มแยกตามประเภทแผ่นเหล็ก (Material Group 1 - zpg1d)',
                   color: '#4f46e5',
-                  desc: 'แยกประเภทการผลิตตามชนิดเหล็กหลักเพื่อไม่ให้เครื่องจักรทำงานสับสน โดยเรียงลำดับกลุ่มดังนี้: 1) เหล็กอาบปี๊บ (tinplate) ➡️ 2) เหล็กอาบ 3-Piece (three_piece) ➡️ 3) เหล็กอาบ NE / DRD / EOE / อื่น ๆ (ne_drd_eoe)',
+                  desc: 'แยกประเภทการผลิตตามชนิดเหล็กหลักเพื่อไม่ให้เครื่องจักรทำงานสับสน โดยเรียงลำดับกลุ่มดังนี้: 1) เหล็กอาบปี๊บ (tinplate) ➡️ 2) เหล็กอาบ 3-Piece (three_piece) ➡️ 3) เหล็กอาบ NE (ne) ➡️ 4) เหล็กอาบ DRD (drd) ➡️ 5) เหล็กอาบ EOE (eoe)',
                 },
                 {
                   step: 'ขั้นตอนที่ 3',
@@ -256,18 +256,32 @@ export default function GuidePage() {
 
             <Divider sx={{ my: 4 }} />
 
-            <Stack direction="row" spacing={1.5} sx={{ bgcolor: 'rgba(79, 70, 229, 0.035)', p: 2, borderRadius: 2, border: '1px solid rgba(79, 70, 229, 0.1)' }}>
+            <Stack direction="row" spacing={1.5} sx={{ bgcolor: 'rgba(79, 70, 229, 0.035)', p: 2.5, borderRadius: 2, border: '1px solid rgba(79, 70, 229, 0.1)' }}>
               <Box sx={{ color: 'primary.main', mt: 0.25 }}>
                 <InfoCircle size="20" variant="Bold" />
               </Box>
               <Box>
-                <Typography variant="body2" sx={{ fontWeight: 800, color: 'primary.main', mb: 0.5 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 850, color: 'primary.main', mb: 1 }}>
                   คำแนะนำสำหรับนักวางแผนคิวงาน (Tips for Planners):
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.5 }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.6, fontSize: '0.875rem', mb: 2 }}>
                   อัลกอริทึมการจัดเรียงอัตโนมัติสร้างมาเพื่อลดภาระงานส่วนใหญ่ในการทำคิวรอบแรก อย่างไรก็ตาม นักวางแผนคิวยังคงสามารถทำ Fine-tuning หรือลากจัดลำดับเพื่อความเหมาะสมเฉพาะหน้าหน้างานเพิ่มเติมได้อย่างอิสระ หลังจากรันคำสั่งจัดเรียงอัตโนมัติแล้ว เพื่อการผลิตที่มีประสิทธิภาพสูงสุด
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 800, display: 'block', lineHeight: 1.5 }}>
+
+                <Typography variant="subtitle1" sx={{ fontWeight: 850, color: 'primary.main', mb: 1.5 }}>
+                  💡 หลักการเรียงคิว ก่อน และ หลัง กดปุ่มจัดเรียงเครื่องนี้:
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.65, fontSize: '0.875rem', mb: 2 }}>
+                  • <strong>ก่อนกดปุ่ม (สถานะเริ่มต้นหลังจากนำเข้าจาก Excel ครั้งแรก):</strong>
+                  <br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;<strong>เน้นประสิทธิภาพการเปลี่ยนสี/แลกเกอร์สูงสุด:</strong> ระบบจะจัดกลุ่มตามประเภทเหล็ก (zpg1d), มิติความกว้าง-ยาว (zpg2d), และจับคู่ชนิดแลกเกอร์ที่เหมือนกัน (zpg3d) เพื่อให้เครื่องจักรวิ่งงานได้อย่างต่อเนื่องและหยุดล้างเครื่อง (Changeover) น้อยที่สุด โดยจะยัง<strong>ไม่ได้ดึง</strong>งานส่งมอบด่วนภายใน 3 วันขึ้นมากองไว้หน้าสุดเดี่ยวๆ เพื่อรักษาประสิทธิภาพการผลิตและรอบล้างเครื่องที่ดีที่สุดของกลุ่มสินค้าเอาไว้
+                  <br /><br />
+                  • <strong>หลังกดปุ่ม (จัดลำดับงานด่วน หรือ จัดเรียงทั้งหมด):</strong>
+                  <br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;<strong>เน้นการส่งมอบงานด่วนไม่ให้ล่าช้าก่อน:</strong> ระบบจะเปิดใช้กฎ <strong>"งานด่วนพิเศษ (Urgent Priority)"</strong> ดึงใบสั่งผลิตที่มีกำหนดส่งเสร็จ (Finish Date) ภายในระยะเวลา 3 วันถัดไปขึ้นมาอยู่คิวลำดับแรกสุดของเครื่องจักรนั้นๆ เสมอ เพื่อช่วยป้องกันปัญหาผลิตไม่ทันกำหนดส่ง จากนั้นค่อยนำงานปกติที่เหลือมาจัดกลุ่มและเรียงต่อสีเคลือบ/แลกเกอร์เพื่อประหยัดเวลาล้างเครื่องต่อท้ายตามลำดับ
+                </Typography>
+
+                <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 800, display: 'block', fontSize: '0.875rem', lineHeight: 1.5 }}>
                   ** ไฟล์ excel ถูกเก็บไว้ที่ pscprdk2web\D:\SAP_XLSX\ZPP001
                 </Typography>
               </Box>

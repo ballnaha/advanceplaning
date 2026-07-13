@@ -10,23 +10,39 @@ export const ZPG1D_GROUPS = [
     colorAccent: '#0891b2', // Cyan
   },
   {
-    id: 'ne_drd_eoe',
-    label: 'เหล็กอาบ NE , เหล็กอาบ DRD , เหล็กอาบ EOE',
+    id: 'ne',
+    label: 'เหล็กอาบ NE',
     colorAccent: '#d97706', // Amber
+  },
+  {
+    id: 'drd',
+    label: 'เหล็กอาบ DRD',
+    colorAccent: '#e11d48', // Rose
+  },
+  {
+    id: 'eoe',
+    label: 'เหล็กอาบ EOE',
+    colorAccent: '#059669', // Emerald
   },
 ] as const;
 
 export function getJobGroupId(zpg1d: string | null): typeof ZPG1D_GROUPS[number]['id'] {
-  const val = zpg1d?.trim();
+  const val = zpg1d?.trim() || '';
   if (val === 'เหล็กอาบปี๊บ') return 'tinplate';
   if (val === 'เหล็กอาบ 3-Piece') return 'three_piece';
-  return 'ne_drd_eoe';
+  if (val === 'เหล็กอาบ NE' || val.includes('NE')) return 'ne';
+  if (val === 'เหล็กอาบ DRD' || val.includes('DRD')) return 'drd';
+  if (val === 'เหล็กอาบ EOE' || val.includes('EOE')) return 'eoe';
+  return 'ne'; // Default fallback
 }
 
 export function getJobGroupSortOrder(zpg1d: string | null): number {
   const groupId = getJobGroupId(zpg1d);
   if (groupId === 'tinplate') return 1;
   if (groupId === 'three_piece') return 2;
+  if (groupId === 'ne') return 3;
+  if (groupId === 'drd') return 4;
+  if (groupId === 'eoe') return 5;
   return 3;
 }
 

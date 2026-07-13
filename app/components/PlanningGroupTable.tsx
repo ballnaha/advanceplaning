@@ -264,11 +264,18 @@ const PlanningJobRow = React.memo(({
         <Typography variant="body2" sx={{ fontWeight: 800 }}>
           {job.aufnr}
         </Typography>
-      </TableCell>
-      <TableCell>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
           {job.zptkx || '-'}
         </Typography>
+      </TableCell>
+      <TableCell>
+        {(job.vornr || job.ltxa1) ? (
+          <Typography variant="body2" sx={{ fontWeight: 650, whiteSpace: 'nowrap' }}>
+            {[job.vornr, job.ltxa1].filter(Boolean).join(' ')}
+          </Typography>
+        ) : (
+          <Typography variant="body2" sx={{ color: 'text.disabled' }}>-</Typography>
+        )}
       </TableCell>
       <TableCell>
         {job.zpg2d ? (
@@ -287,19 +294,6 @@ const PlanningJobRow = React.memo(({
         ) : (
           '-'
         )}
-      </TableCell>
-      <TableCell>{formatDate(job.stdate)}</TableCell>
-      <TableCell>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-          {formatDate(job.findate)}
-          {isNearOrOverdue(job.findate) && (
-            <Tooltip title="ใกล้ถึงกำหนดส่งหรือเกินกำหนด (ภายใน 3 วัน)" arrow>
-              <span style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}>
-                <YellowWarningIcon />
-              </span>
-            </Tooltip>
-          )}
-        </span>
       </TableCell>
       <TableCell>
         <Typography variant="body2" sx={{ fontWeight: 750 }}>
@@ -324,10 +318,35 @@ const PlanningJobRow = React.memo(({
         </Typography>
       </TableCell>
       <TableCell>
+        <Typography variant="body2" sx={{ fontWeight: 650, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem', width: 32 }}>เริ่ม:</Box>
+          {formatDate(job.stdate)}
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 650, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem', width: 32 }}>เสร็จ:</Box>
+          {formatDate(job.findate)}
+          {isNearOrOverdue(job.findate) && (
+            <Tooltip title="ใกล้ถึงกำหนดส่งหรือเกินกำหนด (ภายใน 3 วัน)" arrow>
+              <span style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}>
+                <YellowWarningIcon />
+              </span>
+            </Tooltip>
+          )}
+        </Typography>
+      </TableCell>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
         <Chip
           size="small"
-          color={job.text1?.toUpperCase() === 'WAIT' ? 'warning' : 'default'}
-          label={job.text1 || 'PLAN'}
+          color={
+            job.text1?.toUpperCase() === 'WAIT'
+              ? 'warning'
+              : job.text1?.toUpperCase() === 'START'
+              ? 'info'
+              : job.text1?.toUpperCase() === 'DONE'
+              ? 'success'
+              : 'default'
+          }
+          label={job.text1 || 'NOT START'}
         />
       </TableCell>
       <TableCell align="center">
@@ -518,14 +537,13 @@ const PlanningGroupTable = React.memo(({
                 />
               </TableCell>
               <TableCell width={72}>Seq.</TableCell>
-              <TableCell width={150}>Order</TableCell>
-              <TableCell>Description 1</TableCell>
+              <TableCell>Order / Description 1</TableCell>
+              <TableCell width={130} sx={{ whiteSpace: 'nowrap' }}>OP</TableCell>
               <TableCell width={120}>Group 2</TableCell>
               <TableCell width={130}>Group 3</TableCell>
-              <TableCell width={130}>Start Date</TableCell>
-              <TableCell width={130}>Finish Date</TableCell>
               <TableCell width={190}>Description / FW. / TEMP</TableCell>
-              <TableCell width={96}>Status</TableCell>
+              <TableCell width={150}>Start / Finish Date</TableCell>
+              <TableCell width={110} sx={{ whiteSpace: 'nowrap' }}>Status</TableCell>
               <TableCell width={100} align="center">จัดคิว</TableCell>
             </TableRow>
           </TableHead>

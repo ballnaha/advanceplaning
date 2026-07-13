@@ -55,6 +55,7 @@ interface WorkCenterCardProps {
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
   onAutoArrange: (workCenter: string, jobIds: number[]) => void;
+  onResetToInitial: (workCenter: string) => void;
   onSave: (workCenter: string) => void;
   onToggleCollapse: (key: string) => void;
   onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
@@ -78,6 +79,7 @@ const WorkCenterCard = React.memo(({
   onToggleSelect,
   onToggleSelectAllGroup,
   onAutoArrange,
+  onResetToInitial,
   onSave,
   onToggleCollapse,
   onDragStart,
@@ -177,15 +179,14 @@ const WorkCenterCard = React.memo(({
         </Box>
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="outlined" onClick={() => onAutoArrange(workCenter, group.map((job) => job.id))}>
-            จัดเรียงเครื่องนี้
+            จัดลำดับงานด่วน
           </Button>
           <Button
             size="small"
             variant="outlined"
-            disabled={changedJobCount === 0}
-            onClick={() => setChangesOpen(true)}
+            onClick={() => onResetToInitial(workCenter)}
           >
-            ดูการเปลี่ยนแปลง
+            DEFAULT SETTING
           </Button>
           <Button
             size="small"
@@ -194,7 +195,7 @@ const WorkCenterCard = React.memo(({
             onClick={() => onSave(workCenter)}
             sx={{ boxShadow: 'none' }}
           >
-            {isSaving ? 'กำลังบันทึก' : 'บันทึกลง DB'}
+            {isSaving ? 'SAVING...' : 'SAVE'}
           </Button>
         </Stack>
       </Stack>

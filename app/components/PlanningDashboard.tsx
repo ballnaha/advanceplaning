@@ -8,15 +8,12 @@ import SequenceChangesDialog from './SequenceChangesDialog';
 import type { SequenceChange } from './PlanningGroupTable';
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
-  Checkbox,
   Chip,
   Container,
   Divider,
   FormControl,
-  FormControlLabel,
   IconButton,
   InputLabel,
   LinearProgress,
@@ -29,7 +26,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
@@ -62,10 +58,7 @@ function formatNumber(value: number) {
   return numberFormatter.format(value);
 }
 
-function formatDate(value: string | null) {
-  if (!value) return '-';
-  return dateFormatter.format(new Date(value));
-}
+
 
 function WorkCenterTableSkeleton({ workCenter }: { workCenter: string }) {
   return (
@@ -405,14 +398,14 @@ const isNearOrOverdueForSort = (findateStr: string | null) => {
   if (!findateStr) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const [year, month, day] = findateStr.split('-').map(Number);
   const finishDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-  
+
   const diffMs = finishDate.getTime() - today.getTime();
   const diffDays = Math.floor(diffMs / 86_400_000);
   const inclusiveDays = diffDays + 1;
-  
+
   return inclusiveDays <= 3;
 };
 
@@ -438,32 +431,43 @@ const THAI_MONTHS = [
 
 
 export default function PlanningDashboard({ data }: Props) {
-  const [jobs, setJobs] = React.useState(data.jobs);
-  const [initialJobs, setInitialJobs] = React.useState(data.jobs);
+  const targetWorkCenterIds = ['111001', '111002', '111003', '111004', '111005'];
+
+  const filteredRawJobs = React.useMemo(() => {
+    return data.jobs.filter((job) => targetWorkCenterIds.includes(job.arbpl));
+  }, [data.jobs]);
+
+  const filteredRawWorkCenters = React.useMemo(() => {
+    return data.workCenters.filter((wc) => targetWorkCenterIds.includes(wc.arbpl));
+  }, [data.workCenters]);
+
+  const [jobs, setJobs] = React.useState(filteredRawJobs);
+  const [initialJobs, setInitialJobs] = React.useState(filteredRawJobs);
+
+  // Sync state if prop changes
+  React.useEffect(() => {
+    setJobs(filteredRawJobs);
+    setInitialJobs(filteredRawJobs);
+  }, [filteredRawJobs]);
+
   const sortedWorkCenters = React.useMemo(
-    () => [...data.workCenters].sort((a, b) => a.arbpl.localeCompare(b.arbpl, 'th', { numeric: true })),
-    [data.workCenters],
+    () => [...filteredRawWorkCenters].sort((a, b) => a.arbpl.localeCompare(b.arbpl, 'th', { numeric: true })),
+    [filteredRawWorkCenters],
   );
+
   const defaultWorkCenter = sortedWorkCenters[0]?.arbpl ?? 'ALL';
   const [selectedWorkCenter, setSelectedWorkCenter] = React.useState(defaultWorkCenter);
   const deferredWorkCenter = React.useDeferredValue(selectedWorkCenter);
-  const [startDateFilter, setStartDateFilter] = React.useState<Dayjs | null>(null);
-  const deferredStartDate = React.useDeferredValue(startDateFilter);
-  const [finishDateFilter, setFinishDateFilter] = React.useState<Dayjs | null>(null);
-  const deferredFinishDate = React.useDeferredValue(finishDateFilter);
-  
+
+
   const [selectedYear, setSelectedYear] = React.useState<number | 'ALL'>('ALL');
   const [selectedMonth, setSelectedMonth] = React.useState<number | 'ALL'>('ALL');
-  const [includeNextMonth, setIncludeNextMonth] = React.useState<boolean>(false);
-  const [showOverdue, setShowOverdue] = React.useState<boolean>(false);
-  const deferredShowOverdue = React.useDeferredValue(showOverdue);
-  const [lqFilter, setLqFilter] = React.useState<string | null>(null);
-  const deferredLqFilter = React.useDeferredValue(lqFilter);
+  const [selectedStatus, setSelectedStatus] = React.useState<string>('ALL');
   const [savingWorkCenter, setSavingWorkCenter] = React.useState<string | null>(null);
 
   const yearOptions = React.useMemo(() => {
     const years = new Set<number>();
-    for (const job of data.jobs) {
+    for (const job of filteredRawJobs) {
       const date = job.findate || job.stdate;
       if (date) {
         const yr = dayjs(date).year();
@@ -471,7 +475,7 @@ export default function PlanningDashboard({ data }: Props) {
       }
     }
     return Array.from(years).sort((a, b) => b - a);
-  }, [data.jobs]);
+  }, [filteredRawJobs]);
 
   React.useEffect(() => {
     // Only run on client mount to prevent hydration mismatch
@@ -479,26 +483,15 @@ export default function PlanningDashboard({ data }: Props) {
     setSelectedMonth(dayjs().month() + 1);
   }, []);
 
-  React.useEffect(() => {
-    if (selectedYear === 'ALL' || selectedMonth === 'ALL') {
-      return;
-    }
+  const deferredYear = React.useDeferredValue(selectedYear);
+  const deferredMonth = React.useDeferredValue(selectedMonth);
+  const deferredStatus = React.useDeferredValue(selectedStatus);
 
-    const start = dayjs(`${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`);
-    let end = start.endOf('month');
-    if (includeNextMonth) {
-      end = start.add(1, 'month').endOf('month');
-    }
-
-    setStartDateFilter(start);
-    setFinishDateFilter(end);
-  }, [selectedYear, selectedMonth, includeNextMonth]);
   const isWorkCenterPending =
     selectedWorkCenter !== deferredWorkCenter ||
-    startDateFilter !== deferredStartDate ||
-    finishDateFilter !== deferredFinishDate ||
-    lqFilter !== deferredLqFilter ||
-    showOverdue !== deferredShowOverdue;
+    selectedYear !== deferredYear ||
+    selectedMonth !== deferredMonth ||
+    selectedStatus !== deferredStatus;
   const [snackbar, setSnackbar] = React.useState<{
     open: boolean;
     message: string;
@@ -557,16 +550,7 @@ export default function PlanningDashboard({ data }: Props) {
 
   const handleWorkCenterChange = React.useCallback((newWorkCenter: string) => {
     setSelectedWorkCenter(newWorkCenter);
-    const targetJobs = newWorkCenter === 'ALL'
-      ? jobs
-      : jobs.filter((job) => job.arbpl === newWorkCenter);
-    const newLqOptions = Array.from(new Set(targetJobs.map(getLacquerKey))).filter(Boolean);
-    if (lqFilter && !newLqOptions.includes(lqFilter)) {
-      React.startTransition(() => {
-        setLqFilter(null);
-      });
-    }
-  }, [jobs, lqFilter]);
+  }, []);
 
   const draggingJobIdRef = React.useRef<number | null>(null);
   const dragOverRowRef = React.useRef<HTMLTableRowElement | null>(null);
@@ -580,8 +564,7 @@ export default function PlanningDashboard({ data }: Props) {
   const dropConfirmRowRef = React.useRef<HTMLTableRowElement | null>(null);
   const dropConfirmFrameRef = React.useRef<number | null>(null);
   const isMountedRef = React.useRef(false);
-  const startDateKey = deferredStartDate?.format('YYYY-MM-DD') ?? '';
-  const finishDateKey = deferredFinishDate?.format('YYYY-MM-DD') ?? '';
+
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -615,52 +598,37 @@ export default function PlanningDashboard({ data }: Props) {
     };
   }, []);
 
-  const lacquerCounts = React.useMemo(() => {
-    const targetJobs = deferredWorkCenter === 'ALL'
-      ? jobs
-      : jobs.filter((job) => job.arbpl === deferredWorkCenter);
-    const counts: Record<string, number> = {};
-    for (const job of targetJobs) {
-      const key = getLacquerKey(job);
-      if (key) {
-        counts[key] = (counts[key] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [jobs, deferredWorkCenter]);
-
-  const lacquerOptions = React.useMemo(() => {
-    return Object.keys(lacquerCounts).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
-  }, [lacquerCounts]);
-
   const filteredJobs = React.useMemo(() => {
-    const todayStr = dayjs().format('YYYY-MM-DD');
     return jobs.filter((job) => {
+      // 1. Year/Month filtering
       const jobStart = job.stdate || '';
-      const jobFinish = job.findate || jobStart;
-
-      if (deferredLqFilter && getLacquerKey(job) !== deferredLqFilter) return false;
-
-      // Check if the job's finish date is in the past relative to the selected start date (or today if none selected)
-      const thresholdDate = startDateKey || todayStr;
-      const isOverdue = jobFinish < thresholdDate;
-
-      if (isOverdue) {
-        // If it is in the past:
-        // 1. If we are not showing overdue jobs, hide it.
-        if (!deferredShowOverdue) return false;
-        // 2. If it is already DONE, hide it (not relevant for active scheduling).
-        if (job.text1 === 'DONE') return false;
-        // Otherwise, show it (bypassing start/finish range filters below)
+      if (!jobStart) {
+        if (deferredYear !== 'ALL' || deferredMonth !== 'ALL') return false;
       } else {
-        // Normal date range checks for current/future jobs
-        if (startDateKey && jobFinish < startDateKey) return false;
-        if (finishDateKey && jobStart > finishDateKey) return false;
+        const d = dayjs(jobStart);
+        if (d.isValid()) {
+          const jobYear = d.year();
+          const jobMonth = d.month() + 1;
+          if (deferredYear !== 'ALL' && jobYear !== deferredYear) return false;
+          if (deferredMonth !== 'ALL' && jobMonth !== deferredMonth) return false;
+        } else {
+          if (deferredYear !== 'ALL' || deferredMonth !== 'ALL') return false;
+        }
+      }
+
+      // 2. Status filtering
+      if (deferredStatus !== 'ALL') {
+        const jobStatus = job.text1 || 'null';
+        if (deferredStatus === 'null') {
+          if (job.text1 && job.text1 !== '') return false;
+        } else {
+          if (jobStatus.toUpperCase() !== deferredStatus.toUpperCase()) return false;
+        }
       }
 
       return true;
     });
-  }, [finishDateKey, jobs, startDateKey, deferredLqFilter, deferredShowOverdue]);
+  }, [jobs, deferredYear, deferredMonth, deferredStatus]);
   const lacquerColorMap = React.useMemo(() => {
     const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
 
@@ -818,35 +786,7 @@ export default function PlanningDashboard({ data }: Props) {
     }),
     [scopedJobs],
   );
-  const scopedDailyLoads = React.useMemo(() => {
-    const byDay = new Map<string, { date: string; arbpl: string; jobs: number; waitJobs: number; optime: number; mgvrg: number }>();
 
-    for (const job of scopedJobs) {
-      const date = job.stdate || 'ไม่ระบุวันที่';
-      const key = `${date}|${job.arbpl}`;
-      const current =
-        byDay.get(key) ??
-        {
-          date,
-          arbpl: job.arbpl,
-          jobs: 0,
-          waitJobs: 0,
-          optime: 0,
-          mgvrg: 0,
-        };
-
-      current.jobs += 1;
-      current.waitJobs += job.text1?.toUpperCase() === 'WAIT' ? 1 : 0;
-      current.optime += job.optime;
-      current.mgvrg += job.mgvrg;
-      byDay.set(key, current);
-    }
-
-    return Array.from(byDay.values())
-      .map((item) => ({ ...item, optime: Number(item.optime.toFixed(1)) }))
-      .sort((a, b) => b.optime - a.optime)
-      .slice(0, 8);
-  }, [scopedJobs]);
   const metricScopeLabel = selectedWorkCenter === 'ALL' ? 'รวมทุก Work center' : `Work center ${selectedWorkCenter}`;
 
   const showDropConfirmation = React.useCallback((jobIds: number | number[], placement: 'before' | 'after') => {
@@ -971,7 +911,7 @@ export default function PlanningDashboard({ data }: Props) {
     setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
     setJobs((current) => {
       const workCenterJobs = current.filter((job) => job.arbpl === workCenter);
-      
+
       if (selectedJobIdsRef.current.has(jobId)) {
         targetIds = Array.from(selectedJobIdsRef.current);
       } else {
@@ -990,12 +930,12 @@ export default function PlanningDashboard({ data }: Props) {
 
       if (direction === 'up') {
         if (firstIdx === 0) return current;
-        
+
         const targetJobs = targetIndices.map(idx => ({ ...workCenterJobs[idx] }));
         const remainingJobs = workCenterJobs.filter(job => !targetIds.includes(job.id));
-        
+
         remainingJobs.splice(firstIdx - 1, 0, ...targetJobs);
-        
+
         const neighborJob = remainingJobs[firstIdx];
         if (neighborJob) {
           targetJobs.forEach(job => {
@@ -1012,7 +952,7 @@ export default function PlanningDashboard({ data }: Props) {
         const targetJobs = targetIndices.map(idx => ({ ...workCenterJobs[idx] }));
         const itemBelow = workCenterJobs[lastIdx + 1];
         const remainingJobs = workCenterJobs.filter(job => !targetIds.includes(job.id));
-        
+
         const itemBelowIndex = remainingJobs.findIndex(job => job.id === itemBelow.id);
         if (itemBelowIndex < 0) return current;
 
@@ -1051,6 +991,27 @@ export default function PlanningDashboard({ data }: Props) {
       );
     });
   }, []);
+
+  // DEFAULT SETTING = Discard unsaved changes, revert to last committed DB state
+  const resetWorkCenterToInitial = React.useCallback((workCenter: string) => {
+    setJobs((current) => {
+      const otherJobs = current.filter((job) => job.arbpl !== workCenter);
+      const result: PlanningJob[] = [];
+      for (const job of initialJobs) {
+        if (job.arbpl === workCenter) {
+          result.push(job); // restore committed DB data & order
+        } else if (otherJobs.find((j) => j.id === job.id)) {
+          result.push(current.find((j) => j.id === job.id) ?? job);
+        }
+      }
+      return result;
+    });
+    setSnackbar({
+      open: true,
+      message: `ล้างการเปลี่ยนแปลงของ ${workCenter} แล้ว — คืนค่าจาก DB ล่าสุด`,
+      severity: 'info',
+    });
+  }, [initialJobs]);
 
   const saveSequence = React.useCallback(async (workCenter: string) => {
     setSavingWorkCenter(workCenter);
@@ -1292,50 +1253,90 @@ export default function PlanningDashboard({ data }: Props) {
       >
         <Container maxWidth="xl">
           <Stack spacing={3}>
-            <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
+            <Paper
+              sx={{
+                p: { xs: 2, md: 3 },
+                borderRadius: 4,
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.65) 100%)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.4)',
+                boxShadow: '0 10px 40px -10px rgba(15, 23, 42, 0.05)',
+              }}
+            >
               <Stack
                 direction={{ xs: 'column', lg: 'row' }}
                 spacing={2}
                 sx={{ alignItems: { xs: 'flex-start', lg: 'center' }, justifyContent: 'space-between' }}
               >
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
                   <Box
                     sx={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 1.5,
-                      bgcolor: 'primary.main',
+                      width: 46,
+                      height: 46,
+                      borderRadius: '14px',
+                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
                       display: 'grid',
                       placeItems: 'center',
+                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
                     }}
                   >
                     <Category size="22" color="#ffffff" variant="Bold" />
                   </Box>
                   <Box>
-                    <Typography variant="h5" sx={{ fontWeight: 850 }}>
+                    <Typography
+                      variant="h5"
+                      sx={{
+                        fontWeight: 950,
+                        letterSpacing: '-0.03em',
+                        background: 'linear-gradient(45deg, #4f46e5 30%, #06b6d4 90%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                      }}
+                    >
                       PSC Planing
                     </Typography>
-
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, mt: 0.25, display: 'block' }}>
+                      ระบบจัดตารางแผนการผลิตและลำดับคิวเครื่องจักร
+                    </Typography>
                   </Box>
                 </Stack>
 
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ width: { xs: '100%', lg: 'auto' } }}>
                   <Button
                     component={Link}
                     href="/guide"
                     size="small"
-                    variant="text"
-                    startIcon={<Book size="17" color="#475569" />}
-                    sx={{ color: 'text.secondary', px: 1.5 }}
+                    variant="outlined"
+                    startIcon={<Book size="16" color="#4f46e5" />}
+                    sx={{
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      px: 2.25,
+                      py: 1,
+                      textTransform: 'none',
+                    }}
                   >
                     คู่มือการใช้งาน
                   </Button>
                   <Button
                     size="small"
-                    variant="text"
-                    startIcon={<Refresh size="17" color="#475569" />}
+                    variant="outlined"
+                    startIcon={<Refresh size="16" color="#d97706" />}
                     onClick={() => autoArrange()}
-                    sx={{ color: 'text.secondary', px: 1.5 }}
+                    sx={{
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      px: 2.25,
+                      py: 1,
+                      textTransform: 'none',
+                      color: '#d97706',
+                      borderColor: 'rgba(217, 119, 6, 0.2)',
+                      bgcolor: 'rgba(217, 119, 6, 0.02)',
+                      '&:hover': {
+                        borderColor: '#d97706',
+                        bgcolor: 'rgba(217, 119, 6, 0.05)',
+                      }
+                    }}
                   >
                     จัดเรียงทั้งหมด
                   </Button>
@@ -1343,13 +1344,218 @@ export default function PlanningDashboard({ data }: Props) {
                     component={Link}
                     href="/upload"
                     size="small"
-                    variant="text"
-                    startIcon={<Data size="17" color="#475569" />}
-                    sx={{ color: 'text.secondary', px: 1.5 }}
+                    variant="contained"
+                    startIcon={<Data size="16" color="#ffffff" />}
+                    sx={{
+                      borderRadius: '12px',
+                      fontWeight: 800,
+                      px: 2.5,
+                      py: 1,
+                      textTransform: 'none',
+                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.25)',
+                    }}
                   >
                     Upload Excel
                   </Button>
                 </Stack>
+              </Stack>
+            </Paper>
+
+            {/* Work Center Card Selector Row (Full Width, absolute top below header) */}
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={2}
+              sx={{
+                alignItems: { xs: 'flex-start', md: 'center' },
+                bgcolor: 'background.paper',
+                p: 2,
+                borderRadius: 4,
+                border: '1px solid rgba(15, 23, 42, 0.04)',
+                boxShadow: '0 4px 20px rgba(15, 23, 42, 0.01)',
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary', minWidth: 160 }}>
+                <Category size="18" color="#4f46e5" variant="Bulk" />
+                <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: '0.02em' }}>
+                  เครื่องจักร (Machines):
+                </Typography>
+              </Stack>
+
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: 0.75,
+                  bgcolor: 'rgba(15, 23, 42, 0.03)',
+                  p: 0.5,
+                  borderRadius: '14px',
+                  overflowX: 'auto',
+                  width: { xs: '100%', md: 'auto' },
+                  scrollSnapType: 'x mandatory',
+                  '&::-webkit-scrollbar': {
+                    height: 0, // hide scrollbar for tabs
+                  },
+                }}
+              >
+                {/* "ดูทั้งหมด" Tab */}
+                {(() => {
+                  const isSelected = selectedWorkCenter === 'ALL';
+                  return (
+                    <Button
+                      onClick={() => handleWorkCenterChange('ALL')}
+                      sx={{
+                        flex: '0 0 auto',
+                        px: 3,
+                        py: 0.75,
+                        borderRadius: '10px',
+                        textTransform: 'none',
+                        fontWeight: 850,
+                        fontSize: '0.85rem',
+                        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                        transform: 'none !important', // prevent theme hover lift
+                        boxShadow: isSelected ? '0 2px 8px rgba(180, 83, 9, 0.12)' : 'none !important',
+                        bgcolor: isSelected ? '#b45309' : 'transparent',
+                        color: isSelected ? '#ffffff' : 'text.secondary',
+                        '&:hover': {
+                          bgcolor: isSelected ? '#9a3412' : 'rgba(15, 23, 42, 0.04)',
+                          color: isSelected ? '#ffffff' : 'text.primary',
+                        },
+                      }}
+                    >
+                      ดูทั้งหมด
+                    </Button>
+                  );
+                })()}
+
+                {sortedWorkCenters.map((item) => {
+                  const isSelected = selectedWorkCenter === item.arbpl;
+                  return (
+                    <Button
+                      key={item.arbpl}
+                      onClick={() => handleWorkCenterChange(item.arbpl)}
+                      sx={{
+                        flex: '0 0 auto',
+                        px: 3,
+                        py: 0.75,
+                        borderRadius: '10px',
+                        textTransform: 'none',
+                        fontWeight: 850,
+                        fontSize: '0.85rem',
+                        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                        transform: 'none !important', // prevent theme hover lift
+                        boxShadow: isSelected ? '0 2px 8px rgba(79, 70, 229, 0.16)' : 'none !important',
+                        bgcolor: isSelected ? 'primary.main' : 'transparent',
+                        color: isSelected ? '#ffffff' : 'text.secondary',
+                        '&:hover': {
+                          bgcolor: isSelected ? 'primary.dark' : 'rgba(15, 23, 42, 0.04)',
+                          color: isSelected ? '#ffffff' : 'text.primary',
+                        },
+                      }}
+                    >
+                      {item.arbpl}
+                    </Button>
+                  );
+                })}
+              </Box>
+            </Stack>
+
+            {/* Status Metrics Paper (Stat Cards at the top, full width, below Work Center selectors) */}
+            <Paper
+              sx={{
+                p: { xs: 2.25, md: 3 },
+                borderRadius: 4,
+                bgcolor: 'background.paper',
+                border: '1px solid rgba(15, 23, 42, 0.04)',
+                boxShadow: '0 8px 30px rgba(15, 23, 42, 0.02)',
+              }}
+            >
+              <Stack spacing={2.5}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1.5 }}>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                      สถานะงานตามขอบเขตที่เลือก
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                      {metricScopeLabel} หลังกรองข้อมูล
+                    </Typography>
+                  </Box>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`แสดง ${formatNumber(scopedTotals.jobs)} / ${formatNumber(filteredTotals.jobs)} งานในแผน`}
+                    sx={{
+                      opacity: isWorkCenterPending ? 0.65 : 1,
+                      transition: 'opacity 150ms ease-in-out',
+                      borderRadius: '8px',
+                      fontWeight: 800,
+                      color: 'primary.main',
+                      borderColor: 'primary.light',
+                      bgcolor: 'rgba(79, 70, 229, 0.04)',
+                    }}
+                  />
+                </Stack>
+
+                <Box
+                  sx={{
+                    opacity: isWorkCenterPending ? 0.65 : 1,
+                    pointerEvents: isWorkCenterPending ? 'none' : 'auto',
+                    transition: 'opacity 150ms ease-in-out',
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
+                    gap: 2,
+                  }}
+                >
+                  {[
+                    { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), icon: <TaskSquare size="20" color="#4f46e5" />, accent: '#4f46e5', bg: 'rgba(99, 102, 241, 0.03)', iconBg: 'rgba(99, 102, 241, 0.08)' },
+                    { label: 'STATUS', value: formatNumber(scopedTotals.waitJobs), icon: <Clock size="20" color="#d97706" />, accent: '#d97706', bg: 'rgba(217, 119, 6, 0.03)', iconBg: 'rgba(217, 119, 6, 0.08)' },
+                    { label: 'OP TIME', value: `${formatNumber(scopedTotals.optime)} ชม.`, icon: <StatusUp size="20" color="#0891b2" />, accent: '#0891b2', bg: 'rgba(8, 145, 178, 0.03)', iconBg: 'rgba(8, 145, 178, 0.08)' },
+                    { label: 'ORDER QTY', value: formatNumber(scopedTotals.quantity), icon: <Data size="20" color="#059669" />, accent: '#059669', bg: 'rgba(5, 150, 105, 0.03)', iconBg: 'rgba(5, 150, 105, 0.08)' },
+                    { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, icon: <Setting2 size="20" color="#dc2626" />, accent: '#dc2626', bg: 'rgba(220, 38, 38, 0.03)', iconBg: 'rgba(220, 38, 38, 0.08)' },
+                  ].map((metric) => (
+                    <Paper
+                      key={metric.label}
+                      variant="outlined"
+                      sx={{
+                        p: 2.25,
+                        borderRadius: 3.5, // rounded corners
+                        borderColor: 'rgba(15, 23, 42, 0.06)',
+                        bgcolor: metric.bg,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        height: '100%',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: `0 12px 24px -10px ${metric.accent}24`,
+                          borderColor: metric.accent,
+                        },
+                      }}
+                    >
+                      <Stack spacing={1.5}>
+                        <Box
+                          sx={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: '12px',
+                            bgcolor: metric.iconBg,
+                            display: 'grid',
+                            placeItems: 'center',
+                          }}
+                        >
+                          {metric.icon}
+                        </Box>
+                        <Stack spacing={0.25}>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                            {metric.label}
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                            {metric.value}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Box>
               </Stack>
             </Paper>
 
@@ -1371,14 +1577,22 @@ export default function PlanningDashboard({ data }: Props) {
               >
 
                 {/* Card 1: Filters */}
-                <Paper sx={{ p: 2.5, borderRadius: 2 }}>
-                  <Stack spacing={2}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 850 }}>
+                {/* Card 1: Filters */}
+                <Paper
+                  sx={{
+                    p: 3,
+                    borderRadius: 4,
+                    border: '1px solid rgba(15, 23, 42, 0.04)',
+                    boxShadow: '0 8px 30px rgba(15, 23, 42, 0.02)',
+                  }}
+                >
+                  <Stack spacing={2.5}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '0.01em' }}>
                       ตัวกรองข้อมูล (Filters)
                     </Typography>
 
                     {/* Year/Month Select Filters */}
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction="row" spacing={1.5}>
                       <FormControl size="small" fullWidth>
                         <InputLabel id="year-filter-label">ปีแผนงาน (พ.ศ.)</InputLabel>
                         <Select
@@ -1387,6 +1601,10 @@ export default function PlanningDashboard({ data }: Props) {
                           value={selectedYear}
                           label="ปีแผนงาน (พ.ศ.)"
                           onChange={(e) => setSelectedYear(e.target.value as number | 'ALL')}
+                          sx={{ borderRadius: '10px' }}
+                          MenuProps={{
+                            disableScrollLock: true,
+                          }}
                         >
                           <MenuItem value="ALL">ทั้งหมด</MenuItem>
                           {yearOptions.map((yr) => (
@@ -1404,6 +1622,10 @@ export default function PlanningDashboard({ data }: Props) {
                           value={selectedMonth}
                           label="เดือน"
                           onChange={(e) => setSelectedMonth(e.target.value as number | 'ALL')}
+                          sx={{ borderRadius: '10px' }}
+                          MenuProps={{
+                            disableScrollLock: true,
+                          }}
                         >
                           <MenuItem value="ALL">ทั้งหมด</MenuItem>
                           {THAI_MONTHS.map((m) => (
@@ -1415,131 +1637,49 @@ export default function PlanningDashboard({ data }: Props) {
                       </FormControl>
                     </Stack>
 
-                    <Stack spacing={0.25} sx={{ mt: -0.5 }}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={includeNextMonth}
-                            onChange={(e) => setIncludeNextMonth(e.target.checked)}
-                            disabled={selectedYear === 'ALL' || selectedMonth === 'ALL'}
-                          />
-                        }
-                        label={
-                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                            รวมแผนงานของเดือนถัดไป
-                          </Typography>
-                        }
-                        sx={{ my: -0.25 }}
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            size="small"
-                            checked={showOverdue}
-                            onChange={(e) => setShowOverdue(e.target.checked)}
-                          />
-                        }
-                        label={
-                          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                            แสดงงานค้างส่งในอดีต (Overdue)
-                          </Typography>
-                        }
-                        sx={{ my: -0.25 }}
-                      />
-                    </Stack>
+                    <FormControl size="small" fullWidth>
+                      <InputLabel id="status-filter-label">สถานะ (Status)</InputLabel>
+                      <Select
+                        labelId="status-filter-label"
+                        id="status-filter"
+                        value={selectedStatus}
+                        label="สถานะ (Status)"
+                        onChange={(e) => setSelectedStatus(e.target.value as string)}
+                        sx={{ borderRadius: '10px' }}
+                        MenuProps={{
+                          disableScrollLock: true,
+                        }}
+                      >
+                        <MenuItem value="ALL">ทั้งหมด</MenuItem>
+                        <MenuItem value="null">NOT START</MenuItem>
+                        <MenuItem value="START">START</MenuItem>
+                        <MenuItem value="WAIT">WAIT</MenuItem>
+                        <MenuItem value="DONE">DONE</MenuItem>
+                      </Select>
+                    </FormControl>
 
                     <Divider sx={{ my: 0.5 }} />
-
-                    <DatePicker
-                      label="เริ่มวันที่"
-                      value={startDateFilter}
-                      format="DD/MM/YYYY"
-                      maxDate={finishDateFilter ?? undefined}
-                      onChange={(value) => {
-                        setStartDateFilter(value);
-                        setSelectedYear('ALL');
-                        setSelectedMonth('ALL');
-                      }}
-                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                    />
-                    <DatePicker
-                      label="ถึงวันที่"
-                      value={finishDateFilter}
-                      format="DD/MM/YYYY"
-                      minDate={startDateFilter ?? undefined}
-                      onChange={(value) => {
-                        setFinishDateFilter(value);
-                        setSelectedYear('ALL');
-                        setSelectedMonth('ALL');
-                      }}
-                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                    />
-                    <Autocomplete
-                      size="small"
-                      options={lacquerOptions}
-                      value={lqFilter}
-                      onChange={(_event, newValue) => setLqFilter(newValue)}
-                      renderInput={(params) => <TextField {...params} label="L/Q (Lacquer)" />}
-                      renderOption={(props, option) => {
-                        const count = lacquerCounts[option] || 0;
-                        const { key, ...optionProps } = props;
-                        return (
-                          <Box
-                            component="li"
-                            key={key}
-                            {...optionProps}
-                            sx={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              width: '100%',
-                              py: '4px !important',
-                            }}
-                          >
-                            <Typography variant="body2" sx={{ fontSize: '0.825rem' }}>
-                              {option}
-                            </Typography>
-                            <Chip
-                              size="small"
-                              label={`${count} งาน`}
-                              sx={{
-                                height: 18,
-                                fontSize: '0.7rem',
-                                bgcolor: 'rgba(15, 23, 42, 0.06)',
-                                color: 'text.secondary',
-                                ml: 1.5,
-                              }}
-                            />
-                          </Box>
-                        );
-                      }}
-                      sx={{ width: '100%' }}
-                    />
-                    <Divider />
-                    <Stack spacing={1}>
+                    <Stack spacing={1.5}>
                       <Button
                         fullWidth
                         size="small"
                         variant="outlined"
                         disabled={
-                          !startDateFilter &&
-                          !finishDateFilter &&
-                          !lqFilter &&
                           selectedWorkCenter === defaultWorkCenter &&
                           selectedYear === 'ALL' &&
                           selectedMonth === 'ALL' &&
-                          !showOverdue
+                          selectedStatus === 'ALL'
                         }
                         onClick={() => {
-                          setStartDateFilter(null);
-                          setFinishDateFilter(null);
-                          setLqFilter(null);
                           setSelectedWorkCenter(defaultWorkCenter);
                           setSelectedYear('ALL');
                           setSelectedMonth('ALL');
-                          setIncludeNextMonth(false);
-                          setShowOverdue(false);
+                          setSelectedStatus('ALL');
+                        }}
+                        sx={{
+                          borderRadius: '10px',
+                          fontWeight: 800,
+                          py: 1,
                         }}
                       >
                         ล้างตัวกรอง
@@ -1547,7 +1687,7 @@ export default function PlanningDashboard({ data }: Props) {
                       {isWorkCenterPending ? (
                         <Skeleton variant="text" width={150} height={20} sx={{ mx: 'auto' }} />
                       ) : (
-                        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center', fontWeight: 700 }}>
                           แสดง {formatNumber(visibleJobCount)} จาก {formatNumber(jobs.length)} งาน
                         </Typography>
                       )}
@@ -1558,77 +1698,6 @@ export default function PlanningDashboard({ data }: Props) {
 
               {/* Right Column - Scrollable Content */}
               <Stack spacing={3}>
-                {/* Status Metrics Paper */}
-                <Paper sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 2 }}>
-                  <Stack spacing={2}>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', gap: 1 }}>
-                      <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 850 }}>
-                          สถานะงานตามขอบเขตที่เลือก
-                        </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        {metricScopeLabel} หลังกรองข้อมูล
-                      </Typography>
-                    </Box>
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`แสดง ${formatNumber(scopedTotals.jobs)} / ${formatNumber(filteredTotals.jobs)} งานในช่วงวันที่`}
-                        sx={{ opacity: isWorkCenterPending ? 0.65 : 1, transition: 'opacity 150ms ease-in-out' }}
-                      />
-                    </Stack>
-
-                    <Box
-                      sx={{
-                        opacity: isWorkCenterPending ? 0.65 : 1,
-                        pointerEvents: isWorkCenterPending ? 'none' : 'auto',
-                        transition: 'opacity 150ms ease-in-out',
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
-                        gap: 1.5,
-                      }}
-                    >
-                      {[
-                        { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), icon: <TaskSquare size="22" color="#4f46e5" />, accent: '#4f46e5' },
-                        { label: 'สถานะ WAIT', value: formatNumber(scopedTotals.waitJobs), icon: <Clock size="22" color="#d97706" />, accent: '#d97706' },
-                        { label: 'ชั่วโมงผลิต', value: formatNumber(scopedTotals.optime), icon: <StatusUp size="22" color="#0891b2" />, accent: '#0891b2' },
-                        { label: 'จำนวนผลิต', value: formatNumber(scopedTotals.quantity), icon: <Data size="22" color="#059669" />, accent: '#059669' },
-                        { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, icon: <Setting2 size="22" color="#dc2626" />, accent: '#dc2626' },
-                      ].map((metric) => (
-                        <Paper
-                          key={metric.label}
-                          variant="outlined"
-                          sx={{
-                            p: 1.75,
-                            borderRadius: 1.5,
-                            borderColor: 'rgba(15, 23, 42, 0.08)',
-                            boxShadow: 'none',
-                            position: 'relative',
-                            overflow: 'hidden',
-                            '&::before': {
-                              content: '""',
-                              position: 'absolute',
-                              inset: '0 auto 0 0',
-                              width: 4,
-                              bgcolor: metric.accent,
-                            },
-                          }}
-                        >
-                          <Stack spacing={1}>
-                            <Box>{metric.icon}</Box>
-                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
-                              {metric.label}
-                            </Typography>
-                            <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1.1 }}>
-                              {metric.value}
-                            </Typography>
-                          </Stack>
-                        </Paper>
-                      ))}
-                    </Box>
-                  </Stack>
-                </Paper>
-
                 {data.totals.jobs === 0 && (
                   <Alert severity="warning">
                     ยังไม่มีข้อมูลในฐานข้อมูล ให้รัน `npm run db:push` แล้วตามด้วย `npm run db:seed`
@@ -1636,193 +1705,63 @@ export default function PlanningDashboard({ data }: Props) {
                 )}
 
                 {/* Load Summaries */}
-                <Box
+                <Paper
                   sx={{
+                    p: 3,
+                    borderRadius: 4,
+                    border: '1px solid rgba(15, 23, 42, 0.04)',
+                    boxShadow: '0 8px 30px rgba(15, 23, 42, 0.02)',
                     opacity: isWorkCenterPending ? 0.65 : 1,
                     pointerEvents: isWorkCenterPending ? 'none' : 'auto',
                     transition: 'opacity 150ms ease-in-out',
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', lg: '1.25fr 0.75fr' },
-                    gap: 2,
                   }}
                 >
-                  <Paper sx={{ p: 2, borderRadius: 2 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 850, mb: 1 }}>
-                      โหลดงานตาม Work center
-                    </Typography>
-                    <Stack spacing={1.5}>
-                      {sortedWorkCenters.map((item) => {
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: 'text.primary' }}>
+                    โหลดงานตาม Work center
+                  </Typography>
+                  <Stack spacing={2}>
+                    {(() => {
+                      const maxJobsCount = Math.max(
+                        ...sortedWorkCenters.map((item) => (groupedJobs[item.arbpl] ?? []).length),
+                        0
+                      );
+
+                      return sortedWorkCenters.map((item) => {
                         const filteredGroup = groupedJobs[item.arbpl] ?? [];
-                        const percent = filteredTotals.jobs > 0 ? (filteredGroup.length / filteredTotals.jobs) * 100 : 0;
+                        const jobCount = filteredGroup.length;
+                        const percent = maxJobsCount > 0 ? (jobCount / maxJobsCount) * 100 : 0;
+
                         return (
                           <Box key={item.arbpl}>
-                            <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.5 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 750 }}>
-                                {item.arbpl}
+                            <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.75, alignItems: 'center' }}>
+                              <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>
+                                เครื่องจักร {item.arbpl}
                               </Typography>
-                              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                {formatNumber(filteredGroup.length)} งาน
+                              <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
+                                {formatNumber(jobCount)} งาน ({percent.toFixed(0)}%)
                               </Typography>
                             </Stack>
-                            <LinearProgress variant="determinate" value={Math.min(percent, 100)} sx={{ height: 8, borderRadius: 999 }} />
+                            <LinearProgress
+                              variant="determinate"
+                              value={Math.min(percent, 100)}
+                              sx={{
+                                height: 10,
+                                borderRadius: 999,
+                                bgcolor: 'rgba(15, 23, 42, 0.05)',
+                                '& .MuiLinearProgress-bar': {
+                                  backgroundColor: 'primary.main',
+                                  borderRadius: 999,
+                                },
+                              }}
+                            />
                           </Box>
                         );
-                      })}
-                    </Stack>
-                  </Paper>
-
-                  <Paper sx={{ p: 2, borderRadius: 2 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 850, mb: 1 }}>
-                      วันที่โหลดสูงในขอบเขตที่เลือก
-                    </Typography>
-                    <Stack spacing={1}>
-                      {scopedDailyLoads.map((item) => (
-                        <Stack key={`${item.date}-${item.arbpl}`} direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 750 }}>
-                              {formatDate(item.date)} / {item.arbpl}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                              {formatNumber(item.jobs)} งาน, WAIT {formatNumber(item.waitJobs)}
-                            </Typography>
-                          </Box>
-                          <Chip size="small" label={`${formatNumber(item.optime)} ชม.`} />
-                        </Stack>
-                      ))}
-                    </Stack>
-                  </Paper>
-                </Box>
+                      });
+                    })()}
+                  </Stack>
+                </Paper>
               </Stack>
             </Box>
-
-            {/* Work Center Card Selector Row (Full Width, above tables) */}
-            <Stack
-              direction="row"
-              spacing={2}
-              sx={{
-                overflowX: 'auto',
-                pb: 1.5,
-                width: '100%',
-                scrollSnapType: 'x mandatory',
-                '&::-webkit-scrollbar': {
-                  height: 6,
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  bgcolor: 'rgba(15, 23, 42, 0.1)',
-                  borderRadius: 4,
-                },
-                mb: 1,
-              }}
-            >
-              {/* "ดูทั้งหมด" Card */}
-              {(() => {
-                const isSelected = selectedWorkCenter === 'ALL';
-                const totalHours = filteredJobs.reduce((sum, job) => sum + Number(job.optime || 0), 0);
-                return (
-                  <Button
-                    onClick={() => handleWorkCenterChange('ALL')}
-                    sx={{
-                      flex: '0 0 auto',
-                      minWidth: 160,
-                      p: 2,
-                      borderRadius: 2,
-                      textAlign: 'left',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      border: '1px solid',
-                      borderColor: isSelected ? '#b45309' : 'rgba(15, 23, 42, 0.08)',
-                      bgcolor: isSelected ? 'rgba(180, 83, 9, 0.04)' : 'background.paper',
-                      boxShadow: isSelected ? '0 4px 12px rgba(180, 83, 9, 0.08)' : 'none',
-                      color: isSelected ? '#b45309' : 'text.primary',
-                      textTransform: 'none',
-                      transition: 'all 200ms ease',
-                      '&:hover': {
-                        bgcolor: isSelected ? 'rgba(180, 83, 9, 0.1)' : 'rgba(15, 23, 42, 0.03)',
-                        borderColor: isSelected ? '#b45309' : 'rgba(15, 23, 42, 0.16)',
-                      },
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', mb: 0.5 }}>
-                      ภาพรวมเครื่องจักร
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 900, mb: 1, color: isSelected ? '#b45309' : 'text.primary' }}>
-                      ดูทั้งหมด
-                    </Typography>
-                    <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Chip
-                        size="small"
-                        label={`${filteredJobs.length} งาน`}
-                        sx={{
-                          height: 18,
-                          fontSize: '0.68rem',
-                          fontWeight: 800,
-                          bgcolor: isSelected ? '#b45309' : 'rgba(15, 23, 42, 0.08)',
-                          color: isSelected ? '#ffffff' : 'text.secondary',
-                        }}
-                      />
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                        {totalHours.toFixed(1)} ชม.
-                      </Typography>
-                    </Stack>
-                  </Button>
-                );
-              })()}
-
-              {sortedWorkCenters.map((item) => {
-                const isSelected = selectedWorkCenter === item.arbpl;
-                const filteredGroup = groupedJobs[item.arbpl] ?? [];
-                const hours = filteredGroup.reduce((sum, job) => sum + Number(job.optime || 0), 0);
-                return (
-                  <Button
-                    key={item.arbpl}
-                    onClick={() => handleWorkCenterChange(item.arbpl)}
-                    sx={{
-                      flex: '0 0 auto',
-                      minWidth: 160,
-                      p: 2,
-                      borderRadius: 2,
-                      textAlign: 'left',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      border: '1px solid',
-                      borderColor: isSelected ? 'primary.main' : 'rgba(15, 23, 42, 0.08)',
-                      bgcolor: isSelected ? 'rgba(79, 70, 229, 0.04)' : 'background.paper',
-                      boxShadow: isSelected ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
-                      color: isSelected ? 'primary.main' : 'text.primary',
-                      textTransform: 'none',
-                      transition: 'all 200ms ease',
-                      '&:hover': {
-                        bgcolor: isSelected ? 'rgba(79, 70, 229, 0.08)' : 'rgba(15, 23, 42, 0.03)',
-                        borderColor: isSelected ? 'primary.main' : 'rgba(15, 23, 42, 0.16)',
-                      },
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', mb: 0.5 }}>
-                      เครื่องจักร
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 900, mb: 1, color: isSelected ? 'primary.main' : 'text.primary' }}>
-                      {item.arbpl}
-                    </Typography>
-                    <Stack direction="row" spacing={1} sx={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Chip
-                        size="small"
-                        label={`${filteredGroup.length} งาน`}
-                        sx={{
-                          height: 18,
-                          fontSize: '0.68rem',
-                          fontWeight: 800,
-                          bgcolor: isSelected ? 'primary.main' : 'rgba(15, 23, 42, 0.08)',
-                          color: isSelected ? '#ffffff' : 'text.secondary',
-                        }}
-                      />
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                        {hours.toFixed(1)} ชม.
-                      </Typography>
-                    </Stack>
-                  </Button>
-                );
-              })}
-            </Stack>
 
             <Stack
               spacing={2}
@@ -1854,6 +1793,7 @@ export default function PlanningDashboard({ data }: Props) {
                       onToggleSelect={handleToggleSelect}
                       onToggleSelectAllGroup={handleToggleSelectAllGroup}
                       onAutoArrange={autoArrange}
+                      onResetToInitial={resetWorkCenterToInitial}
                       onSave={saveSequence}
                       onToggleCollapse={toggleGroupCollapse}
                       onDragStart={handleDragStart}
@@ -1975,7 +1915,7 @@ export default function PlanningDashboard({ data }: Props) {
                   },
                 }}
               >
-                {savingAll ? 'กำลังบันทึก...' : 'บันทึกทั้งหมด'}
+                {savingAll ? 'SAVING...' : 'SAVE'}
               </Button>
             </Paper>
           </Box>
