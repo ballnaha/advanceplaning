@@ -6,6 +6,7 @@ import {
   Checkbox,
   Chip,
   IconButton,
+  InputAdornment,
   LinearProgress,
   Paper,
   Stack,
@@ -13,9 +14,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { Clock, HambergerMenu } from 'iconsax-react';
-import { ZPG1D_GROUPS, cleanZpg2d, getJobGroupId } from '@/lib/zpg1d-helpers';
+import { CloseCircle, Clock, HambergerMenu, SearchNormal1 } from 'iconsax-react';
+import { ZPG1D_GROUPS, cleanZpg2d, getQueueGroupId, isQueueGroupOverride } from '@/lib/zpg1d-helpers';
 import type { PlanningJob, WorkCenterSummary } from '@/lib/planning';
+import { FinishDateWarningIcon, isFinishDateWithinWarningWindow } from './FinishDateWarning';
 import JobDetailDialog from './JobDetailDialog';
 
 type LacquerColor = { bg: string; chipBg: string; text: string; border: string };
@@ -26,12 +28,15 @@ type RoutingBoardProps = {
   dirtyWorkCenters: Map<string, boolean>;
   selectedJobIds: Set<number>;
   lacquerColorMap: Map<string, LacquerColor>;
+  collapsedGroups: Record<string, boolean>;
+  onToggleGroup: (key: string) => void;
   onToggleSelect: (jobId: number) => void;
   onDragStart: (event: React.DragEvent<HTMLElement>, jobId: number) => void;
   onDrag: (event: React.DragEvent<HTMLElement>) => void;
   onDragOverJob: (event: React.DragEvent<HTMLElement>, jobId: number) => void;
   onDragLeaveJob: (event: React.DragEvent<HTMLElement>) => void;
   onDropOnJob: (event: React.DragEvent<HTMLElement>, targetJobId: number, workCenter: string) => void;
+  onDropToGroup: (event: React.DragEvent<HTMLElement>, workCenter: string, groupLabel: string) => void;
   onDropToLane: (event: React.DragEvent<HTMLElement>, workCenter: string) => void;
   onDragEnd: (event: React.DragEvent<HTMLElement>) => void;
 };
@@ -67,14 +72,6 @@ function getStatusStyle(status: string | null) {
   }
 }
 
-function isUrgent(value: string | null) {
-  if (!value) return false;
-  const finish = new Date(`${value}T00:00:00`).getTime();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return finish - today.getTime() <= 3 * 86_400_000;
-}
-
 const RoutingOrderCard = React.memo(function RoutingOrderCard({
   job,
   index,
@@ -103,8 +100,10 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
   onDragEnd: RoutingBoardProps['onDragEnd'];
 }) {
   const status = getStatusStyle(job.text1);
-  const group = ZPG1D_GROUPS.find((item) => item.id === getJobGroupId(job.zpg1d));
-  const urgent = isUrgent(job.findate);
+  const group = ZPG1D_GROUPS.find((item) => item.id === getQueueGroupId(job));
+  const hasQueueGroupOverride = isQueueGroupOverride(job);
+  const urgent = isFinishDateWithinWarningWindow(job.findate);
+  const borderAccentColor = group?.colorAccent || '#64748b';
 
   return (
     <Paper
@@ -138,24 +137,23 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
         position: 'relative',
         contentVisibility: 'auto',
         containIntrinsicSize: '150px',
-        willChange: 'transform, opacity',
         overflow: 'visible',
         cursor: 'pointer',
-        borderRadius: 2,
+        borderRadius: 2.5,
         border: '1px solid',
         borderColor: selected ? '#818cf8' : 'rgba(15, 23, 42, 0.09)',
         bgcolor: selected ? '#f5f7ff' : '#ffffff',
         boxShadow: selected
           ? '0 0 0 2px rgba(99, 102, 241, 0.1), 0 8px 20px rgba(15, 23, 42, 0.08)'
-          : '0 4px 12px rgba(15, 23, 42, 0.045)',
+          : '0 5px 16px rgba(15, 23, 42, 0.045)',
         transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease',
         '&:hover': {
           borderColor: 'rgba(79, 70, 229, 0.34)',
           boxShadow: '0 10px 24px rgba(15, 23, 42, 0.09)',
           transform: 'translateY(-1px)',
         },
-        '&.dragging-row': { opacity: 0.36, transform: 'scale(0.98)' },
-        '&.drop-target-row': { borderColor: '#4f46e5', bgcolor: '#f5f7ff', transform: 'none', boxShadow: '0 0 0 2px rgba(79, 70, 229, 0.12)' },
+        '&.dragging-row': { opacity: 0.36, transform: 'scale(0.98)', willChange: 'transform, opacity' },
+        '&.drop-target-row': { borderColor: '#4f46e5', bgcolor: '#f5f7ff', transform: 'none', boxShadow: '0 0 0 2px rgba(79, 70, 229, 0.12)', willChange: 'border-color, box-shadow' },
         '&.drop-before-row::before, &.drop-after-row::after': {
           content: '""',
           position: 'absolute',
@@ -193,99 +191,143 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
       }}
     >
       <Box data-drop-indicator className="drop-position-indicator" />
-      <Box sx={{ display: 'grid', gridTemplateColumns: '5px minmax(0, 1fr)', minHeight: 138 }}>
-        <Box sx={{ bgcolor: lacquerColor.text, borderRadius: '8px 0 0 8px' }} />
-        <Box sx={{ p: 1.25 }}>
-          <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-              <Checkbox
-                size="small"
-                checked={selected}
-                onClick={(event) => event.stopPropagation()}
-                onChange={() => onToggleSelect(job.id)}
-                sx={{ p: 0.25, ml: -0.35 }}
-              />
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 850 }}>
-                  #{String(index + 1).padStart(2, '0')}
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 950, lineHeight: 1.15, color: '#172033' }}>
-                  {job.aufnr}
-                </Typography>
-              </Box>
-            </Stack>
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-              <Chip
-                label={status.label}
-                size="small"
-                sx={{
-                  height: 22,
-                  fontSize: '0.64rem',
-                  fontWeight: 900,
-                  color: status.color,
-                  bgcolor: status.bgcolor,
-                  border: '1px solid',
-                  borderColor: status.borderColor,
-                }}
-              />
-              <Tooltip title="ลากเพื่อจัดลำดับหรือย้าย Work Center" arrow>
-                <IconButton
-                  size="small"
-                  onClick={(event) => event.stopPropagation()}
-                  sx={{ p: 0.35, cursor: 'grab', color: '#94a3b8', '&:active': { cursor: 'grabbing' } }}
-                >
-                  <HambergerMenu size="17" color="currentColor" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Stack>
-
-          <Typography variant="caption" noWrap sx={{ display: 'block', mt: 0.65, color: '#64748b', fontWeight: 700 }}>
-            {job.zptkx || '-'}
-          </Typography>
-
-          <Stack direction="row" spacing={0.5} sx={{ mt: 0.55, alignItems: 'center', minWidth: 0 }}>
-            <Typography variant="caption" sx={{ flex: '0 0 auto', color: '#94a3b8', fontWeight: 900 }}>OP</Typography>
-            <Typography variant="caption" noWrap sx={{ minWidth: 0, color: '#334155', fontWeight: 850 }}>
-              {[job.vornr, job.ltxa1].filter(Boolean).join(' ') || '-'}
-            </Typography>
-          </Stack>
-
-          <Stack direction="row" spacing={0.5} sx={{ mt: 0.65, minWidth: 0, overflow: 'hidden' }}>
-            <Chip
+      <Box sx={{ borderLeft: `4.5px solid ${borderAccentColor}`, borderRadius: '10px 0 0 10px', p: 1.4 }}>
+        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+            <Checkbox
               size="small"
-              label={job.zpg2d ? cleanZpg2d(job.zpg2d) : group?.label || '-'}
-              sx={{ height: 21, maxWidth: '45%', color: '#4f46e5', bgcolor: '#eef2ff', fontWeight: 850 }}
+              checked={selected}
+              onClick={(event) => event.stopPropagation()}
+              onChange={() => onToggleSelect(job.id)}
+              sx={{ p: 0.2, ml: -0.4 }}
             />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 900, display: 'block', lineHeight: 1 }}>
+                SEQ {String(index + 1).padStart(2, '0')}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.1, color: '#0f172a', fontSize: '0.94rem', fontWeight: 950, lineHeight: 1.1 }}>
+                {job.aufnr}
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
             <Chip
+              label={status.label}
               size="small"
-              label={job.zltkx || '-'}
               sx={{
-                height: 21,
-                maxWidth: '55%',
-                color: lacquerColor.text,
-                bgcolor: lacquerColor.chipBg,
-                border: `1px solid ${lacquerColor.border}`,
-                fontWeight: 850,
+                height: 20,
+                fontSize: '0.68rem',
+                fontWeight: 900,
+                color: status.color,
+                bgcolor: status.bgcolor,
+                border: '1px solid',
+                borderColor: status.borderColor,
+                borderRadius: 1.5,
               }}
             />
+            <Tooltip title="ลากเพื่อจัดลำดับหรือย้าย Work Center" arrow>
+              <IconButton
+                size="small"
+                onClick={(event) => event.stopPropagation()}
+                sx={{ p: 0.25, cursor: 'grab', color: '#94a3b8', '&:hover': { bgcolor: '#f1f5f9', color: '#475569' }, '&:active': { cursor: 'grabbing' } }}
+              >
+                <HambergerMenu size="16" color="currentColor" />
+              </IconButton>
+            </Tooltip>
           </Stack>
+        </Stack>
 
-          <Stack
-            direction="row"
-            sx={{ mt: 0.75, pt: 0.65, borderTop: '1px solid rgba(15, 23, 42, 0.06)', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <Stack direction="row" spacing={0.4} sx={{ alignItems: 'center', minWidth: 0 }}>
-              <Clock size="13" color={urgent ? '#dc2626' : '#64748b'} />
-              <Typography variant="caption" noWrap sx={{ color: urgent ? '#b91c1c' : '#64748b', fontWeight: 850 }}>
-                Finish {formatDate(job.findate)}
+        <Typography variant="body2" noWrap title={job.zptkx || '-'} sx={{ display: 'block', mt: 0.85, color: '#475569', fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.3 }}>
+          {job.zptkx || '-'}
+        </Typography>
+
+        {/* OP & Group Info badges */}
+        <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.5 }}>
+          <Box sx={{ px: 0.75, py: 0.25, borderRadius: 1.25, bgcolor: '#f1f5f9', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+            <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 900, mr: 0.5, flexShrink: 0 }}>OP</Typography>
+            <Typography variant="caption" noWrap title={[job.vornr, job.ltxa1].filter(Boolean).join(' ') || '-'} sx={{ color: '#334155', fontSize: '0.74rem', fontWeight: 800 }}>
+              {[job.vornr, job.ltxa1].filter(Boolean).join(' ') || '-'}
+            </Typography>
+          </Box>
+
+          {job.zpg2d && (
+            <Box sx={{ px: 0.75, py: 0.25, borderRadius: 1.25, border: '1px solid #dfe3ff', bgcolor: '#f6f7ff', display: 'inline-flex', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: '#4338ca', fontSize: '0.74rem', fontWeight: 900 }}>
+                {cleanZpg2d(job.zpg2d)}
               </Typography>
-            </Stack>
-            <Typography variant="caption" sx={{ flex: '0 0 auto', color: 'text.secondary', fontWeight: 850 }}>
-              {numberFormatter.format(Number(job.optime.toFixed(1)))} ชม.
+            </Box>
+          )}
+
+          {group?.label && (
+            <Box sx={{ px: 0.75, py: 0.25, borderRadius: 1.25, border: '1px solid #dfe3ff', bgcolor: '#eef2ff', display: 'inline-flex', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: '#4f46e5', fontSize: '0.74rem', fontWeight: 900 }}>
+                {group.label}
+              </Typography>
+            </Box>
+          )}
+          {hasQueueGroupOverride && (
+            <Box sx={{ px: 0.75, py: 0.25, borderRadius: 1.25, border: '1px solid #fcd34d', bgcolor: '#fffbeb', display: 'inline-flex', alignItems: 'center' }}>
+              <Typography variant="caption" sx={{ color: '#92400e', fontSize: '0.7rem', fontWeight: 900 }}>
+                ประเภทจริง: {job.zpg1d || '-'}
+              </Typography>
+            </Box>
+          )}
+        </Stack>
+
+        {/* Lacquer & Parameters Section */}
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{
+            mt: 0.85,
+            px: 0.75,
+            py: 0.45,
+            minWidth: 0,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderRadius: 1.5,
+            bgcolor: lacquerColor.chipBg,
+            border: `1px solid ${lacquerColor.border}`,
+          }}
+        >
+          <Typography variant="caption" noWrap title={job.zltkx || '-'} sx={{ minWidth: 0, color: lacquerColor.text, fontSize: '0.78rem', fontWeight: 900 }}>
+            L/Q: {job.zltkx || '-'}
+          </Typography>
+          <Typography variant="caption" noWrap sx={{ flex: '0 0 auto', color: '#526175', fontSize: '0.72rem', fontWeight: 800 }}>
+             {job.usr00 || '-'} · TEMP {job.usr02 || '-'}
+          </Typography>
+        </Stack>
+
+        {/* Calendar Dates Footer */}
+        <Stack
+          direction="row"
+          sx={{
+            mt: 1.2,
+            pt: 0.85,
+            borderTop: '1px solid rgba(15, 23, 42, 0.05)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+            <Clock size="13" color="#64748b" style={{ flexShrink: 0 }} />
+            <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.76rem', fontWeight: 700 }}>
+              เริ่ม <Box component="span" sx={{ color: '#334155', fontWeight: 800 }}>{formatDate(job.stdate)}</Box>
             </Typography>
           </Stack>
-        </Box>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+            <Typography variant="caption" sx={{ color: urgent ? '#b91c1c' : '#64748b', fontSize: '0.76rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 0.35 }}>
+              เสร็จ <Box component="span" sx={{ color: urgent ? '#b91c1c' : '#334155', fontWeight: urgent ? 900 : 800 }}>{formatDate(job.findate)}</Box>
+              {urgent && (
+                <Tooltip title="Finish Date อยู่ภายใน 3 วัน (นับรวมวันนี้)" arrow>
+                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}>
+                    <FinishDateWarningIcon />
+                  </Box>
+                </Tooltip>
+              )}
+            </Typography>
+          </Stack>
+        </Stack>
       </Box>
     </Paper>
   );
@@ -297,12 +339,15 @@ export default function RoutingBoard({
   dirtyWorkCenters,
   selectedJobIds,
   lacquerColorMap,
+  collapsedGroups,
+  onToggleGroup,
   onToggleSelect,
   onDragStart,
   onDrag,
   onDragOverJob,
   onDragLeaveJob,
   onDropOnJob,
+  onDropToGroup,
   onDropToLane,
   onDragEnd,
 }: RoutingBoardProps) {
@@ -310,6 +355,10 @@ export default function RoutingBoard({
   const [activeLane, setActiveLane] = React.useState<string | null>(null);
   const [laneOrderFilters, setLaneOrderFilters] = React.useState<Record<string, string>>({});
   const activeLaneRef = React.useRef<string | null>(null);
+  const currentJobById = React.useMemo(
+    () => new Map(Object.values(groupedJobs).flat().map((job) => [job.id, job])),
+    [groupedJobs],
+  );
   const maxHours = React.useMemo(
     () => Math.max(...workCenters.map((item) => (groupedJobs[item.arbpl] ?? []).reduce((sum, job) => sum + job.optime, 0)), 1),
     [groupedJobs, workCenters],
@@ -361,6 +410,11 @@ export default function RoutingBoard({
             const isDirty = dirtyWorkCenters.get(workCenter.arbpl) ?? false;
             const isActive = activeLane === workCenter.arbpl;
 
+            const visibleJobGroups = ZPG1D_GROUPS.map((definition) => ({
+              definition,
+              jobs: visibleJobs.filter((job) => getQueueGroupId(job) === definition.id),
+            })).filter((group) => group.jobs.length > 0);
+
             return (
               <Paper
                 key={workCenter.arbpl}
@@ -410,30 +464,45 @@ export default function RoutingBoard({
                       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
                         {normalizedLaneFilter
                           ? `${numberFormatter.format(visibleJobs.length)} / ${numberFormatter.format(jobs.length)} Orders`
-                          : `${numberFormatter.format(jobs.length)} Orders`} · {numberFormatter.format(Number(hours.toFixed(1)))} ชม.
+                          : `${numberFormatter.format(jobs.length)} Orders`}
                       </Typography>
                     </Box>
                     <Chip label={`#${laneIndex + 1}`} size="small" sx={{ height: 22, fontWeight: 900, bgcolor: '#f1f5f9', color: '#64748b' }} />
                   </Stack>
 
-                  <LinearProgress
-                    variant="determinate"
-                    value={(hours / maxHours) * 100}
-                    sx={{ mt: 1.25, height: 5, borderRadius: 999, bgcolor: '#eef2f7', '& .MuiLinearProgress-bar': { borderRadius: 999 } }}
-                  />
-
                   <Stack spacing={0.75} sx={{ mt: 1.25 }}>
                     <TextField
                       fullWidth
                       size="small"
-                      type="search"
+                      type="text"
                       value={laneOrderFilter}
                       onChange={(event) => {
                         const value = event.target.value;
                         setLaneOrderFilters((current) => ({ ...current, [workCenter.arbpl]: value }));
                       }}
                       placeholder="Filter Order Number"
-                      slotProps={{ htmlInput: { autoComplete: 'off', 'aria-label': `Filter Order in Work Center ${workCenter.arbpl}` } }}
+                      slotProps={{
+                        input: {
+                          autoComplete: 'off',
+                          'aria-label': `Filter Order in Work Center ${workCenter.arbpl}`,
+                          startAdornment: (
+                            <InputAdornment position="start" sx={{ color: '#94a3b8' }}>
+                              <SearchNormal1 size="14" color="currentColor" />
+                            </InputAdornment>
+                          ),
+                          endAdornment: laneOrderFilter && (
+                            <InputAdornment position="end">
+                              <IconButton
+                                size="small"
+                                onClick={() => setLaneOrderFilters((current) => ({ ...current, [workCenter.arbpl]: '' }))}
+                                sx={{ p: 0.15, color: '#94a3b8', '&:hover': { color: '#64748b' } }}
+                              >
+                                <CloseCircle size="14" variant="Bold" color="currentColor" />
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
                       sx={{
                         flex: 1,
                         minWidth: 0,
@@ -444,50 +513,128 @@ export default function RoutingBoard({
                   </Stack>
                 </Box>
 
-                <Stack spacing={1} sx={{ p: 1, minHeight: 240 }}>
-                  {visibleJobs.map((job) => {
-                    const index = jobIndexById.get(job.id) ?? 0;
+                <Stack spacing={1.5} sx={{ p: 1, minHeight: 240 }}>
+                  {visibleJobGroups.map(({ definition, jobs: groupJobs }) => {
+                    const collapseKey = `${workCenter.arbpl}|${definition.id}`;
+                    const isCollapsed = collapsedGroups[collapseKey] ?? false;
+
                     return (
-                      <RoutingOrderCard
-                        key={job.id}
-                        job={job}
-                        index={index}
-                        selected={selectedJobIds.has(job.id)}
-                        lacquerColor={lacquerColorMap.get(getLacquerKey(job)) ?? fallbackLacquerColor}
-                        onToggleSelect={onToggleSelect}
-                        onOpen={setSelectedJob}
-                        onDragStart={onDragStart}
-                        onDrag={onDrag}
-                        onDragOverJob={onDragOverJob}
-                        onDragLeaveJob={onDragLeaveJob}
-                        onDropOnJob={onDropOnJob}
-                        onDragEnd={handleCardDragEnd}
-                      />
+                      <Box key={definition.id}>
+                        <Box
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={!isCollapsed}
+                          onClick={() => onToggleGroup(collapseKey)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              onToggleGroup(collapseKey);
+                            }
+                          }}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            event.dataTransfer.dropEffect = 'move';
+                            activateLane(workCenter.arbpl);
+                          }}
+                          onDrop={(event) => {
+                            event.stopPropagation();
+                            clearActiveLane();
+                            onDropToGroup(event, workCenter.arbpl, definition.label);
+                          }}
+                          sx={{
+                            px: 1,
+                            py: 0.75,
+                            mb: isCollapsed ? 0 : 0.85,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            borderRadius: 2,
+                            border: '1px solid',
+                            borderColor: `${definition.colorAccent}30`,
+                            borderLeft: `4px solid ${definition.colorAccent}`,
+                            bgcolor: `${definition.colorAccent}0A`,
+                            cursor: 'pointer',
+                            transition: 'background-color 150ms ease, border-color 150ms ease',
+                            '&:hover': {
+                              borderColor: `${definition.colorAccent}55`,
+                              bgcolor: `${definition.colorAccent}12`,
+                            },
+                          }}
+                        >
+                          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
+                            <Typography component="span" aria-hidden sx={{ color: definition.colorAccent, fontSize: '0.72rem', fontWeight: 950 }}>
+                              {isCollapsed ? '▶' : '▼'}
+                            </Typography>
+                            <Typography variant="body2" noWrap sx={{ minWidth: 0, color: definition.colorAccent, fontSize: '0.8rem', fontWeight: 950 }}>
+                              {definition.label}
+                            </Typography>
+                          </Stack>
+                          <Chip
+                            size="small"
+                            label={`${numberFormatter.format(groupJobs.length)} งาน`}
+                            sx={{
+                              flex: '0 0 auto',
+                              height: 22,
+                              bgcolor: definition.colorAccent,
+                              color: '#ffffff',
+                              fontSize: '0.7rem',
+                              fontWeight: 900,
+                            }}
+                          />
+                        </Box>
+
+                        {!isCollapsed && (
+                          <Stack spacing={1}>
+                            {groupJobs.map((job) => {
+                              const index = jobIndexById.get(job.id) ?? 0;
+                              return (
+                                <RoutingOrderCard
+                                  key={job.id}
+                                  job={job}
+                                  index={index}
+                                  selected={selectedJobIds.has(job.id)}
+                                  lacquerColor={lacquerColorMap.get(getLacquerKey(job)) ?? fallbackLacquerColor}
+                                  onToggleSelect={onToggleSelect}
+                                  onOpen={setSelectedJob}
+                                  onDragStart={onDragStart}
+                                  onDrag={onDrag}
+                                  onDragOverJob={onDragOverJob}
+                                  onDragLeaveJob={onDragLeaveJob}
+                                  onDropOnJob={onDropOnJob}
+                                  onDragEnd={handleCardDragEnd}
+                                />
+                              );
+                            })}
+                          </Stack>
+                        )}
+                      </Box>
                     );
                   })}
 
-                  <Box
-                    sx={{
-                      minHeight: jobs.length === 0 ? 180 : 58,
-                      display: 'grid',
-                      placeItems: 'center',
-                      border: '1.5px dashed',
-                      borderColor: isActive ? '#818cf8' : 'rgba(100, 116, 139, 0.22)',
-                      borderRadius: 2,
-                      color: isActive ? '#4f46e5' : '#94a3b8',
-                      bgcolor: isActive ? 'rgba(99, 102, 241, 0.06)' : 'rgba(255, 255, 255, 0.45)',
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ fontWeight: 850, textAlign: 'center', px: 2 }}>
-                      {isActive
-                        ? `วางที่ท้ายคิว ${workCenter.arbpl}`
-                        : normalizedLaneFilter && visibleJobs.length === 0
-                          ? 'ไม่พบ Order ใน Work Center นี้'
-                          : jobs.length === 0
-                            ? 'ลาก Order มาวางใน Work Center นี้'
-                            : 'วางท้ายคิว'}
-                    </Typography>
-                  </Box>
+                  {jobs.length === 0 && (
+                    <Box
+                      sx={{
+                        minHeight: 180,
+                        display: 'grid',
+                        placeItems: 'center',
+                        border: '1.5px dashed',
+                        borderColor: isActive ? '#818cf8' : 'rgba(100, 116, 139, 0.22)',
+                        borderRadius: 2,
+                        color: isActive ? '#4f46e5' : '#94a3b8',
+                        bgcolor: isActive ? 'rgba(99, 102, 241, 0.06)' : 'rgba(255, 255, 255, 0.45)',
+                      }}
+                    >
+                      <Typography variant="caption" sx={{ fontWeight: 850, textAlign: 'center', px: 2 }}>
+                        {isActive
+                          ? `วางลำดับท้าย ${workCenter.arbpl}`
+                          : normalizedLaneFilter && visibleJobs.length === 0
+                            ? 'ไม่พบ Order ใน Work Center นี้'
+                            : 'ลาก Order มาวางใน Work Center นี้'}
+                      </Typography>
+                    </Box>
+                  )}
                 </Stack>
               </Paper>
             );
@@ -497,7 +644,7 @@ export default function RoutingBoard({
 
       <JobDetailDialog
         fallbackLacquerColor={fallbackLacquerColor}
-        job={selectedJob}
+        job={selectedJob ? currentJobById.get(selectedJob.id) ?? selectedJob : null}
         lacquerColorMap={lacquerColorMap}
         onClose={() => setSelectedJob(null)}
       />

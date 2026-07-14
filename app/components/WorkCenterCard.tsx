@@ -9,7 +9,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { ZPG1D_GROUPS, getJobGroupId } from '@/lib/zpg1d-helpers';
+import { ZPG1D_GROUPS, getQueueGroupId } from '@/lib/zpg1d-helpers';
 import type { PlanningJob } from '@/lib/planning';
 import PlanningGroupTable from './PlanningGroupTable';
 import type { SequenceChange } from './PlanningGroupTable';
@@ -87,7 +87,7 @@ const WorkCenterCard = React.memo(({
     let hours = 0;
 
     for (const job of group) {
-      const groupId = getJobGroupId(job.zpg1d);
+      const groupId = getQueueGroupId(job);
       const currentStats = byGroupId.get(groupId);
       if (currentStats) {
         currentStats.jobs.push(job);
@@ -140,18 +140,15 @@ const WorkCenterCard = React.memo(({
   }, [onMoveJobOneStep, workCenter]);
 
   return (
-    <Paper sx={{ p: 2, borderRadius: 2 }}>
+    <Paper sx={{ p: 2.5, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.06)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.01)' }}>
       <Stack
         direction={{ xs: 'column', md: 'row' }}
-        spacing={1.5}
-        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mb: 2 }}
+        spacing={2}
+        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mb: 2.5 }}
       >
         <Box>
-          <Typography variant="h6" sx={{ fontWeight: 850 }}>
+          <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a', letterSpacing: '-0.02em' }}>
             Work center {workCenter}
-          </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {formatNumber(group.length)} งาน / {formatNumber(Number(groupStats.hours.toFixed(1)))} ชม. / เปลี่ยน L/Q {formatNumber(groupStats.changeovers)} ครั้ง
           </Typography>
           {changedJobCount > 0 && (
             <Chip
@@ -160,16 +157,30 @@ const WorkCenterCard = React.memo(({
               sx={{
                 mt: 0.75,
                 width: 'fit-content',
-                bgcolor: 'rgba(245, 158, 11, 0.14)',
-                color: '#92400e',
-                border: '1px solid rgba(245, 158, 11, 0.32)',
-                fontWeight: 850,
+                bgcolor: 'rgba(245, 158, 11, 0.12)',
+                color: '#b45309',
+                border: '1px solid rgba(245, 158, 11, 0.28)',
+                fontWeight: 900,
+                fontSize: '0.72rem',
+                borderRadius: 1.5,
               }}
             />
           )}
         </Box>
+
+        <Stack direction="row" spacing={1.5} sx={{ width: { xs: '100%', md: 'auto' }, flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ px: 1.5, py: 0.75, borderRadius: 2, border: '1px solid #f1f5f9', bgcolor: '#f8fafc', minWidth: 80, textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontWeight: 800, fontSize: '0.64rem', textTransform: 'uppercase', letterSpacing: '0.02em' }}>Orders</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 950, color: '#0f172a', mt: 0.25 }}>{formatNumber(group.length)} งาน</Typography>
+          </Box>
+          
+          <Box sx={{ px: 1.5, py: 0.75, borderRadius: 2, border: '1px solid #f1f5f9', bgcolor: '#f8fafc', minWidth: 80, textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontWeight: 800, fontSize: '0.64rem', textTransform: 'uppercase', letterSpacing: '0.02em' }}>สลับ L/Q</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 950, color: '#0891b2', mt: 0.25 }}>{formatNumber(groupStats.changeovers)} ครั้ง</Typography>
+          </Box>
+        </Stack>
       </Stack>
-      <Divider sx={{ mb: 2 }} />
+      <Divider sx={{ mb: 2.5 }} />
 
       {ZPG1D_GROUPS.map((groupDef) => {
         const productGroupStats = groupStats.byGroupId.get(groupDef.id);
@@ -178,7 +189,7 @@ const WorkCenterCard = React.memo(({
         const isCollapsed = collapsedGroups[collapseKey] ?? false;
 
         return (
-          <Box key={groupDef.id} sx={{ mb: 2 }}>
+          <Box key={groupDef.id} sx={{ mb: 2.5 }}>
             {/* Group Header */}
             <Box
               onClick={() => onToggleCollapse(collapseKey)}
@@ -188,12 +199,15 @@ const WorkCenterCard = React.memo(({
                 justifyContent: 'space-between',
                 p: 1.25,
                 cursor: 'pointer',
-                borderRadius: 1.5,
+                borderRadius: 2.5,
                 bgcolor: isCollapsed ? 'rgba(15, 23, 42, 0.015)' : 'rgba(15, 23, 42, 0.035)',
+                border: '1px solid',
+                borderColor: isCollapsed ? 'rgba(15, 23, 42, 0.05)' : `${groupDef.colorAccent}25`,
                 borderLeft: `5px solid ${groupDef.colorAccent}`,
                 transition: 'all 180ms ease',
                 '&:hover': {
                   bgcolor: isCollapsed ? 'rgba(15, 23, 42, 0.03)' : 'rgba(15, 23, 42, 0.06)',
+                  borderColor: `${groupDef.colorAccent}45`,
                 },
               }}
             >
@@ -201,15 +215,15 @@ const WorkCenterCard = React.memo(({
                 <Typography
                   variant="body2"
                   sx={{
-                    fontWeight: 800,
+                    fontWeight: 900,
                     color: groupDef.colorAccent,
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    fontSize: '0.875rem',
+                    fontSize: '0.85rem',
                   }}
                 >
-                  <span style={{ fontSize: '0.9rem', display: 'inline-block', width: '12px' }}>
+                  <span style={{ fontSize: '0.8rem', display: 'inline-block', width: '12px' }}>
                     {isCollapsed ? '▶' : '▼'}
                   </span>
                   {groupDef.label}
@@ -220,24 +234,25 @@ const WorkCenterCard = React.memo(({
                   sx={{
                     height: 20,
                     fontSize: '0.68rem',
-                    fontWeight: 800,
+                    fontWeight: 900,
                     bgcolor: groupJobs.length > 0 ? groupDef.colorAccent : 'rgba(15, 23, 42, 0.08)',
                     color: groupJobs.length > 0 ? '#ffffff' : 'text.secondary',
+                    borderRadius: 1,
                   }}
                 />
               </Stack>
               {groupJobs.length > 0 && (
                 <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                    ชั่วโมง: <Box component="span" sx={{ color: 'text.primary', fontWeight: 850 }}>{formatNumber(Number((productGroupStats?.hours ?? 0).toFixed(1)))} ชม.</Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.72rem' }}>
+                    ชั่วโมง: <Box component="span" sx={{ color: '#0f172a', fontWeight: 950 }}>{formatNumber(Number((productGroupStats?.hours ?? 0).toFixed(1)))} ชม.</Box>
                   </Typography>
                   <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                    จำนวนผลิต: <Box component="span" sx={{ color: 'text.primary', fontWeight: 850 }}>{formatNumber(productGroupStats?.quantity ?? 0)}</Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.72rem' }}>
+                    จำนวนผลิต: <Box component="span" sx={{ color: '#0f172a', fontWeight: 950 }}>{formatNumber(productGroupStats?.quantity ?? 0)}</Box>
                   </Typography>
                   <Divider orientation="vertical" flexItem sx={{ height: 12, my: 'auto' }} />
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                    เปลี่ยน L/Q: <Box component="span" sx={{ color: 'text.primary', fontWeight: 850 }}>{formatNumber(productGroupStats?.changeovers ?? 0)} ครั้ง</Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.72rem' }}>
+                    เปลี่ยน L/Q: <Box component="span" sx={{ color: '#0f172a', fontWeight: 950 }}>{formatNumber(productGroupStats?.changeovers ?? 0)} ครั้ง</Box>
                   </Typography>
                 </Stack>
               )}
@@ -285,7 +300,13 @@ const WorkCenterCard = React.memo(({
     prevProps.group.length === nextProps.group.length &&
     prevProps.group.every((job, i) => {
       const next = nextProps.group[i];
-      return job === next || (job.id === next.id && job.zpg1d === next.zpg1d);
+      return job === next || (
+        job.id === next.id &&
+        job.seqno === next.seqno &&
+        job.arbpl === next.arbpl &&
+        job.zpg1d === next.zpg1d &&
+        job.queueGroup === next.queueGroup
+      );
     }) &&
     prevProps.group.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id)) &&
     prevProps.group.every((job) => prevProps.sequenceChanges.get(job.id) === nextProps.sequenceChanges.get(job.id))

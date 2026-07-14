@@ -123,11 +123,12 @@ export default function PlanningActionButtons({
                 },
               }
             : {
-                color: '#94a3b8',
-                borderColor: '#e2e8f0',
-                '&.Mui-disabled': {
-                  borderColor: '#f1f5f9',
-                  color: '#cbd5e1',
+                color: '#4f46e5',
+                borderColor: '#a5b4fc',
+                bgcolor: '#ffffff',
+                '&:hover': {
+                  borderColor: '#6366f1',
+                  bgcolor: 'rgba(99, 102, 241, 0.05)',
                 },
               }),
         }}

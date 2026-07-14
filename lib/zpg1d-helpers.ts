@@ -46,6 +46,23 @@ export function getJobGroupSortOrder(zpg1d: string | null): number {
   return 3;
 }
 
+type QueueGroupJob = {
+  zpg1d: string | null;
+  queueGroup?: string | null;
+};
+
+export function getQueueGroupId(job: QueueGroupJob): typeof ZPG1D_GROUPS[number]['id'] {
+  return getJobGroupId(job.queueGroup?.trim() || job.zpg1d);
+}
+
+export function getQueueGroupSortOrder(job: QueueGroupJob): number {
+  return getJobGroupSortOrder(job.queueGroup?.trim() || job.zpg1d);
+}
+
+export function isQueueGroupOverride(job: QueueGroupJob): boolean {
+  return Boolean(job.queueGroup?.trim()) && getQueueGroupId(job) !== getJobGroupId(job.zpg1d);
+}
+
 export function cleanZpg2d(zpg2d: string | null): string {
   if (!zpg2d) return '';
   const trimmed = zpg2d.trim();
@@ -59,8 +76,11 @@ export function cleanZpg2d(zpg2d: string | null): string {
 export interface SortableJob {
   arbpl: string;
   zpg1d: string | null;
+  queueGroup?: string | null;
   zpg2d: string | null;
   zpg3d: string | null;
+  vornr?: string | null;
+  zlmat?: string | null;
   stdate: string | Date | null;
   findate?: string | Date | null;
   seqno: number | null;
@@ -98,13 +118,21 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
     return fin || st || '9999-12-31';
   };
 
+  const getJobStartDateStr = (job: T): string => {
+    if (!job.stdate) return '9999-12-31';
+    return job.stdate instanceof Date ? job.stdate.toISOString().slice(0, 10) : String(job.stdate);
+  };
+
   const materialGroupText = (value: string | null) => value?.trim() || 'ไม่ระบุ';
 
   if (options?.prioritizeUrgent) {
+    // Establish the normal production sequence once. Urgent promotion must be
+    // stable so jobs with the same Finish Date keep their setup-efficient order.
+    const baseSortedJobs = sortJobsWithZpg3dTransition(jobsList, { prioritizeUrgent: false });
     const urgentJobs: T[] = [];
     const normalJobs: T[] = [];
 
-    for (const job of jobsList) {
+    for (const job of baseSortedJobs) {
       const fin = job.findate ? (job.findate instanceof Date ? job.findate.toISOString().slice(0, 10) : String(job.findate)) : null;
       if (isUrgent(fin)) {
         urgentJobs.push(job);
@@ -113,7 +141,8 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
       }
     }
 
-    // 1. Sort Urgent jobs: Group by Due Date, then sort internally with transition sort
+    // Group by Finish Date. Insertion order within the same date comes directly
+    // from baseSortedJobs, so color/LQ continuity is not recalculated or reset.
     const urgentByDate: Record<string, T[]> = {};
     for (const job of urgentJobs) {
       const dateKey = getJobDueDateStr(job);
@@ -123,14 +152,10 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
     const sortedUrgentDates = Object.keys(urgentByDate).sort();
     const sortedUrgentJobs: T[] = [];
     for (const d of sortedUrgentDates) {
-      const dayJobs = urgentByDate[d];
-      sortedUrgentJobs.push(...sortJobsWithZpg3dTransition(dayJobs, { prioritizeUrgent: false }));
+      sortedUrgentJobs.push(...urgentByDate[d]);
     }
 
-    // 2. Sort Normal jobs with transition sort
-    const sortedNormalJobs = sortJobsWithZpg3dTransition(normalJobs, { prioritizeUrgent: false });
-
-    return [...sortedUrgentJobs, ...sortedNormalJobs];
+    return [...sortedUrgentJobs, ...normalJobs];
   }
 
   // Group by arbpl first
@@ -149,10 +174,10 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
   for (const arbpl of sortedArbpls) {
     const wcJobs = byArbpl[arbpl];
 
-    // Group by zpg1d
+    // Group by queue group, falling back to the original material group.
     const byZpg1d: Record<string, T[]> = {};
     for (const job of wcJobs) {
-      const zpg1dKey = job.zpg1d || 'ไม่ระบุ';
+      const zpg1dKey = job.queueGroup?.trim() || job.zpg1d || 'ไม่ระบุ';
       byZpg1d[zpg1dKey] ??= [];
       byZpg1d[zpg1dKey].push(job);
     }
@@ -167,67 +192,118 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
     for (const zpg1d of sortedZpg1ds) {
       const g1Jobs = byZpg1d[zpg1d];
 
-      // Group by zpg2d (cleaned)
-      const byZpg2d: Record<string, T[]> = {};
+      // Start Date is the primary sequence inside each material group.
+      const byStartDate: Record<string, T[]> = {};
       for (const job of g1Jobs) {
-        const zpg2dKey = cleanZpg2d(job.zpg2d);
-        byZpg2d[zpg2dKey] ??= [];
-        byZpg2d[zpg2dKey].push(job);
+        const startDateKey = getJobStartDateStr(job);
+        byStartDate[startDateKey] ??= [];
+        byStartDate[startDateKey].push(job);
       }
 
-      const sortedZpg2ds = Object.keys(byZpg2d).sort((a, b) =>
-        a.localeCompare(b, 'th', { numeric: true })
-      );
+      const sortedStartDates = Object.keys(byStartDate).sort();
 
       let lastZpg3d: string | null = null;
+      let lastZlmat: string | null = null;
 
-      for (const zpg2d of sortedZpg2ds) {
-        const g2Jobs = byZpg2d[zpg2d];
+      for (const startDate of sortedStartDates) {
+        const dateJobs = byStartDate[startDate];
 
-        // Group by zpg3d
-        const byZpg3d: Record<string, T[]> = {};
-        for (const job of g2Jobs) {
-          const zpg3dKey = materialGroupText(job.zpg3d);
-          byZpg3d[zpg3dKey] ??= [];
-          byZpg3d[zpg3dKey].push(job);
+        // Group by zpg2d (cleaned) inside the same Start Date.
+        const byZpg2d: Record<string, T[]> = {};
+        for (const job of dateJobs) {
+          const zpg2dKey = cleanZpg2d(job.zpg2d);
+          byZpg2d[zpg2dKey] ??= [];
+          byZpg2d[zpg2dKey].push(job);
         }
 
-        const zpg3dKeys = Object.keys(byZpg3d);
+        const sortedZpg2ds = Object.keys(byZpg2d).sort((a, b) =>
+          a.localeCompare(b, 'th', { numeric: true })
+        );
 
-        // Sort keys: if lastZpg3d matches one of the keys, put that key first.
-        const sortedKeys = [...zpg3dKeys].sort((a, b) => {
-          if (lastZpg3d) {
-            const aMatch = a === lastZpg3d;
-            const bMatch = b === lastZpg3d;
-            if (aMatch && !bMatch) return -1;
-            if (!aMatch && bMatch) return 1;
+        for (const zpg2d of sortedZpg2ds) {
+          const g2Jobs = byZpg2d[zpg2d];
+
+          // Group by zpg3d
+          const byZpg3d: Record<string, T[]> = {};
+          for (const job of g2Jobs) {
+            const zpg3dKey = materialGroupText(job.zpg3d);
+            byZpg3d[zpg3dKey] ??= [];
+            byZpg3d[zpg3dKey].push(job);
           }
-          return a.localeCompare(b, 'th', { numeric: true });
-        });
 
-        for (const zpg3d of sortedKeys) {
-          const groupJobs = byZpg3d[zpg3d];
-          
-          groupJobs.sort((a, b) => {
-            const dateA = getJobDueDateStr(a);
-            const dateB = getJobDueDateStr(b);
-            const dueCompare = dateA.localeCompare(dateB);
-            if (dueCompare !== 0) return dueCompare;
+          const zpg3dKeys = Object.keys(byZpg3d);
 
-            const seqA = a.seqno ?? a.sourceRow;
-            const seqB = b.seqno ?? b.sourceRow;
-            if (seqA !== seqB) return seqA - seqB;
-
-            return a.sourceRow - b.sourceRow;
+          // Continue the previous color when possible to reduce transitions.
+          const sortedKeys = [...zpg3dKeys].sort((a, b) => {
+            if (lastZpg3d) {
+              const aMatch = a === lastZpg3d;
+              const bMatch = b === lastZpg3d;
+              if (aMatch && !bMatch) return -1;
+              if (!aMatch && bMatch) return 1;
+            }
+            return a.localeCompare(b, 'th', { numeric: true });
           });
 
-          result.push(...groupJobs);
-        }
+          for (const zpg3d of sortedKeys) {
+            const colorJobs = byZpg3d[zpg3d];
 
-        // Update lastZpg3d to the zpg3d of the last job placed in this zpg2d group
-        const lastJobInG2 = result[result.length - 1];
-        if (lastJobInG2) {
-          lastZpg3d = materialGroupText(lastJobInG2.zpg3d);
+            const byVornr: Record<string, T[]> = {};
+            for (const job of colorJobs) {
+              const vornrKey = materialGroupText(job.vornr ?? null);
+              byVornr[vornrKey] ??= [];
+              byVornr[vornrKey].push(job);
+            }
+
+            const continuesPreviousColor = zpg3d === lastZpg3d;
+            const sortedVornrKeys = Object.keys(byVornr).sort((a, b) =>
+              a.localeCompare(b, 'th', { numeric: true })
+            );
+
+            for (const vornr of sortedVornrKeys) {
+              const byZlmat: Record<string, T[]> = {};
+              for (const job of byVornr[vornr]) {
+                const zlmatKey = materialGroupText(job.zlmat ?? null);
+                byZlmat[zlmatKey] ??= [];
+                byZlmat[zlmatKey].push(job);
+              }
+
+              const sortedZlmatKeys = Object.keys(byZlmat).sort((a, b) => {
+                if (continuesPreviousColor && lastZlmat) {
+                  const aMatch = a === lastZlmat;
+                  const bMatch = b === lastZlmat;
+                  if (aMatch && !bMatch) return -1;
+                  if (!aMatch && bMatch) return 1;
+                }
+                return a.localeCompare(b, 'th', { numeric: true });
+              });
+
+              for (const zlmat of sortedZlmatKeys) {
+                const lqCodeJobs = byZlmat[zlmat];
+
+                lqCodeJobs.sort((a, b) => {
+                  const dateA = getJobDueDateStr(a);
+                  const dateB = getJobDueDateStr(b);
+                  const dueCompare = dateA.localeCompare(dateB);
+                  if (dueCompare !== 0) return dueCompare;
+
+                  const seqA = a.seqno ?? a.sourceRow;
+                  const seqB = b.seqno ?? b.sourceRow;
+                  if (seqA !== seqB) return seqA - seqB;
+
+                  return a.sourceRow - b.sourceRow;
+                });
+
+                result.push(...lqCodeJobs);
+              }
+            }
+          }
+
+          // Carry both color and L/Q code into the next size/date group.
+          const lastJobInG2 = result[result.length - 1];
+          if (lastJobInG2) {
+            lastZpg3d = materialGroupText(lastJobInG2.zpg3d);
+            lastZlmat = materialGroupText(lastJobInG2.zlmat ?? null);
+          }
         }
       }
     }
@@ -235,4 +311,3 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
 
   return result;
 }
-

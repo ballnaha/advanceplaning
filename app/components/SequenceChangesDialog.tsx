@@ -9,6 +9,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Grow,
   IconButton,
   Paper,
   Stack,
@@ -92,11 +93,20 @@ export default function SequenceChangesDialog({
       maxWidth={showWorkCenter ? 'lg' : 'md'}
       disableScrollLock
       keepMounted
-      transitionDuration={0}
+      slots={{ transition: Grow }}
+      transitionDuration={{ enter: 280, exit: 220 }}
       slotProps={{
+        transition: {
+          easing: {
+            enter: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            exit: 'cubic-bezier(0.4, 0, 1, 1)',
+          },
+        },
         backdrop: {
           sx: {
             bgcolor: 'rgba(15, 23, 42, 0.35)',
+            backdropFilter: 'blur(3px)',
+            transition: 'opacity 220ms ease, backdrop-filter 220ms ease',
           },
         },
         paper: {
@@ -181,7 +191,7 @@ export default function SequenceChangesDialog({
                       {[
                         { value: 'ALL' as const, label: `ทั้งหมด ${changes.length}` },
                         { value: 'WORK_CENTER' as const, label: `ย้ายเครื่อง ${stats.workCenterMoves}` },
-                        { value: 'SEQUENCE' as const, label: `เปลี่ยนคิว ${stats.sequenceMoves}` },
+                        { value: 'SEQUENCE' as const, label: `เปลี่ยนลำดับ ${stats.sequenceMoves}` },
                         { value: 'GROUP' as const, label: `เปลี่ยนกลุ่ม ${stats.groupMoves}` },
                       ].map((filter) => (
                         <Chip

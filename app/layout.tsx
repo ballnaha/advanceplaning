@@ -30,7 +30,22 @@ export default function RootLayout({
         className={sarabun.className}
         style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', margin: 0 }}
       >
-        <MuiProvider>{children}</MuiProvider>
+        <MuiProvider>
+          <main style={{ flex: '1 0 auto' }}>{children}</main>
+          <footer
+            style={{
+              flexShrink: 0,
+              padding: '12px 20px',
+              borderTop: '1px solid rgba(15, 23, 42, 0.08)',
+              color: '#64748b',
+              background: 'rgba(255, 255, 255, 0.55)',
+              textAlign: 'center',
+              fontSize: '12px',
+            }}
+          >
+            © {new Date().getFullYear()} PSC Planing
+          </footer>
+        </MuiProvider>
       </body>
     </html>
   );

@@ -14,6 +14,7 @@ export type PlanningJob = {
   zptkx: string | null;
   zptxt: string | null;
   zpg1d: string | null;
+  queueGroup: string | null;
   zpg2d: string | null;
   zpg3d: string | null;
   zpg4d: string | null;
@@ -109,6 +110,7 @@ function serializeJob(job: Awaited<ReturnType<typeof prisma.productionJob.findMa
     zptkx: job.zptkx,
     zptxt: job.zptxt,
     zpg1d: job.zpg1d,
+    queueGroup: job.queueGroup,
     zpg2d: job.zpg2d,
     zpg3d: job.zpg3d,
     zpg4d: job.zpg4d,
@@ -161,7 +163,9 @@ export async function getPlanningDashboardData(): Promise<PlanningDashboardData>
     list.push(job);
   }
 
-  // Sort each Work Center based on whether it has custom sequence (seqno > 0)
+  // Always normalize the initial dashboard queue using the production sequence.
+  // Saved seqno is retained for persistence, but must not place a later OP before
+  // an earlier OP from the same Work Order when the dashboard first loads.
   const sortedJobsList: typeof jobs = [];
   const sortedArbpls = Array.from(byArbpl.keys()).sort((a, b) =>
     a.localeCompare(b, 'th', { numeric: true })
@@ -169,22 +173,8 @@ export async function getPlanningDashboardData(): Promise<PlanningDashboardData>
 
   for (const arbpl of sortedArbpls) {
     const wcJobs = byArbpl.get(arbpl)!;
-    const hasCustomSequence = wcJobs.some((job) => job.seqno > 0);
-
-    if (hasCustomSequence) {
-      // Sort strictly by the custom sequence saved in DB
-      wcJobs.sort((a, b) => {
-        if (a.seqno !== b.seqno) {
-          return a.seqno - b.seqno;
-        }
-        return a.sourceRow - b.sourceRow;
-      });
-      sortedJobsList.push(...wcJobs);
-    } else {
-      // Default initial layout using transition sort
-      const defaultSorted = sortJobsWithZpg3dTransition(wcJobs);
-      sortedJobsList.push(...defaultSorted);
-    }
+    const defaultSorted = sortJobsWithZpg3dTransition(wcJobs);
+    sortedJobsList.push(...defaultSorted);
   }
 
   const sortedJobs = sortedJobsList;

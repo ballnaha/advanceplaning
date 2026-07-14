@@ -21,6 +21,7 @@ export default function NotificationSnackbar({
 }: NotificationSnackbarProps) {
   return (
     <Snackbar
+      key={message}
       open={open}
       autoHideDuration={autoHideDuration}
       onClose={onClose}

@@ -7,6 +7,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  Grow,
   IconButton,
   Paper,
   Stack,
@@ -62,6 +63,13 @@ const detailSections: DetailSection[] = [
       { key: 'optime', label: 'Op. Time', always: true },
       { key: 'opdays', label: 'Op. Days', always: true },
       { key: 'mgvrg', label: 'Order Quantity', always: true },
+    ],
+  },
+  {
+    title: 'Planning Override',
+    accent: '#7c3aed',
+    fields: [
+      { key: 'queueGroup', label: 'Queue Group' },
     ],
   },
   {
@@ -264,26 +272,42 @@ function SummaryTile({ label, value }: { label: string; value: React.ReactNode }
 
 export default function JobDetailDialog({
   fallbackLacquerColor,
-  job,
+  job: currentJob,
   lacquerColorMap,
   onClose,
 }: JobDetailDialogProps) {
+  const [retainedJob, setRetainedJob] = React.useState<PlanningJob | null>(currentJob);
+
+  React.useEffect(() => {
+    if (currentJob) setRetainedJob(currentJob);
+  }, [currentJob]);
+
+  const job = currentJob ?? retainedJob;
   const lacquerColor = job ? lacquerColorMap.get(getLacquerKey(job)) ?? fallbackLacquerColor : fallbackLacquerColor;
   const productionDays = job ? calculateInclusiveProductionDays(job.stdate, job.findate) ?? job.prdday ?? 0 : 0;
 
   return (
     <Dialog
-      open={job !== null}
+      open={currentJob !== null}
       onClose={onClose}
       fullWidth
       maxWidth="lg"
       disableScrollLock
-      transitionDuration={{ enter: 150, exit: 100 }}
+      slots={{ transition: Grow }}
+      transitionDuration={{ enter: 280, exit: 220 }}
       slotProps={{
+        transition: {
+          easing: {
+            enter: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            exit: 'cubic-bezier(0.4, 0, 1, 1)',
+          },
+          onExited: () => setRetainedJob(null),
+        },
         backdrop: {
           sx: {
             bgcolor: 'rgba(15, 23, 42, 0.35)',
             backdropFilter: 'blur(3px)',
+            transition: 'opacity 220ms ease, backdrop-filter 220ms ease',
           },
         },
         paper: {

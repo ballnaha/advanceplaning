@@ -4,6 +4,7 @@ type ResequenceItem = {
   id: number;
   seqno: number;
   zpg1d?: string | null;
+  queueGroup?: string | null;
   arbpl?: string;
 };
 
@@ -33,6 +34,17 @@ export async function POST(request: Request) {
     for (const item of items) {
       sql += 'WHEN ? THEN ? ';
       params.push(item.id, item.zpg1d ?? null);
+    }
+    sql += 'END';
+  }
+
+  // Persist the planner-only queue group without changing the original ZPG1D.
+  const hasQueueGroup = items.some((item) => item.queueGroup !== undefined);
+  if (hasQueueGroup) {
+    sql += ', queueGroup = CASE id ';
+    for (const item of items) {
+      sql += 'WHEN ? THEN ? ';
+      params.push(item.id, item.queueGroup?.trim() || null);
     }
     sql += 'END';
   }

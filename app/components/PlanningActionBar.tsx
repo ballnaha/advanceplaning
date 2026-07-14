@@ -1,13 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Box, Button, Paper, Stack, Typography, Tooltip, IconButton, CircularProgress } from '@mui/material';
+import { Box, Button, Paper, Stack, Typography, CircularProgress } from '@mui/material';
 
 type PlanningActionBarProps = {
-  changedJobCount: number;
-  dirtyWorkCenterCount: number;
   isSaving: boolean;
-  onReviewChanges: () => void;
   onAutoArrange: () => void;
   onReset: () => void;
   onSave: () => void;
@@ -40,18 +37,8 @@ const SaveIcon = () => (
   </svg>
 );
 
-const EyeIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
 export default function PlanningActionBar({
-  changedJobCount,
-  dirtyWorkCenterCount,
   isSaving,
-  onReviewChanges,
   onAutoArrange,
   onReset,
   onSave,
@@ -78,13 +65,12 @@ export default function PlanningActionBar({
         sx={{
           p: '10px 14px 10px 20px',
           borderRadius: '999px',
-          bgcolor: 'rgba(15, 23, 42, 0.94)',
+          bgcolor: 'rgba(15, 23, 42, 0.98)',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3), 0 10px 20px rgba(0, 0, 0, 0.15)',
           display: 'flex',
           alignItems: 'center',
           gap: { xs: 1.5, sm: 2.5 },
-          backdropFilter: 'blur(16px)',
           color: '#ffffff',
           flexWrap: { xs: 'wrap', md: 'nowrap' },
           justifyContent: 'center',
@@ -110,11 +96,9 @@ export default function PlanningActionBar({
           />
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 850, fontSize: '0.85rem', letterSpacing: '-0.01em', whiteSpace: 'nowrap', color: 'rgba(255, 255, 255, 0.85)' }}>
-              แผนงานแบบร่าง
+              มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
             </Typography>
-            <Typography variant="caption" sx={{ display: 'block', color: 'rgba(255, 255, 255, 0.65)', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
-              พบการปรับลำดับงาน {numberFormatter.format(changedJobCount)} รายการ ใน {numberFormatter.format(dirtyWorkCenterCount)} Work Center
-            </Typography>
+            
           </Box>
         </Box>
 
@@ -123,34 +107,6 @@ export default function PlanningActionBar({
 
         {/* Action Buttons */}
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          {/* Review changes button */}
-          <Tooltip title="ดูรายการเปลี่ยนแปลงทั้งหมด" arrow>
-            <span>
-              <IconButton
-                size="small"
-                disabled={changedJobCount === 0 || isSaving}
-                onClick={onReviewChanges}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  bgcolor: 'rgba(255, 255, 255, 0.05)',
-                  color: 'rgba(255, 255, 255, 0.85)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255, 255, 255, 0.15)',
-                    color: '#ffffff',
-                  },
-                  '&.Mui-disabled': {
-                    borderColor: 'rgba(255, 255, 255, 0.05)',
-                    color: 'rgba(255, 255, 255, 0.25)',
-                  },
-                }}
-              >
-                <EyeIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-
           {/* จัดลำดับด่วน */}
           <Button
             size="small"

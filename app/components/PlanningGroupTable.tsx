@@ -152,7 +152,7 @@ const PlanningJobRow = React.memo(({
         boxShadow: `inset 4px 0 0 ${lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
         '&:active': { cursor: 'grabbing' },
         '&:hover': { bgcolor: isSelected ? 'rgba(79, 70, 229, 0.08) !important' : 'rgba(15, 23, 42, 0.025)' },
-        '&.dragging-row': { opacity: 0.45, transform: 'scale(0.985)' },
+        '&.dragging-row': { opacity: 0.45, transform: 'scale(0.985)', willChange: 'opacity, transform' },
         '& .quick-move-btns': {
           opacity: 1,
         },
@@ -217,7 +217,7 @@ const PlanningJobRow = React.memo(({
         },
         '& td': {
           boxSizing: 'border-box',
-          py: 1,
+          py: 1.15,
           transition: 'border-color 160ms ease, background-color 160ms ease',
           verticalAlign: 'middle',
         },
@@ -249,7 +249,7 @@ const PlanningJobRow = React.memo(({
         },
       }}
     >
-      <TableCell width={48} onClick={(event) => event.stopPropagation()} sx={{ textAlign: 'center', py: 0 }}>
+      <TableCell width={48} onClick={(event) => event.stopPropagation()} sx={{ textAlign: 'center', py: 0.5 }}>
         <Checkbox
           size="small"
           checked={isSelected}
@@ -257,73 +257,95 @@ const PlanningJobRow = React.memo(({
           sx={{ p: 0.5 }}
         />
       </TableCell>
-      <TableCell>
-        <Chip size="small" label={globalIndex + 1} />
+      <TableCell sx={{ py: 0.5 }}>
+        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.82rem', fontWeight: 900 }}>
+          #{String(globalIndex + 1).padStart(2, '0')}
+        </Typography>
       </TableCell>
-      <TableCell>
-        <Typography variant="body2" sx={{ fontWeight: 800 }}>
+      <TableCell sx={{ py: 0.5 }}>
+        <Typography variant="body2" sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem' }}>
           {job.aufnr}
         </Typography>
-        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
+        <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.1, fontSize: '0.8rem', fontWeight: 600 }}>
           {job.zptkx || '-'}
         </Typography>
       </TableCell>
-      <TableCell>
+      <TableCell sx={{ py: 0.5 }}>
         {(job.vornr || job.ltxa1) ? (
-          <Typography variant="body2" sx={{ fontWeight: 650, whiteSpace: 'nowrap' }}>
-            {[job.vornr, job.ltxa1].filter(Boolean).join(' ')}
-          </Typography>
+          <Box sx={{ px: 0.75, py: 0.25, borderRadius: 1.25, bgcolor: '#f1f5f9', border: '1px solid #e2e8f0', display: 'inline-block', whiteSpace: 'nowrap' }}>
+            <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.74rem', fontWeight: 900, mr: 0.5 }}>OP</Typography>
+            <Typography variant="caption" sx={{ color: '#334155', fontSize: '0.8rem', fontWeight: 800 }}>
+              {[job.vornr, job.ltxa1].filter(Boolean).join(' ')}
+            </Typography>
+          </Box>
         ) : (
-          <Typography variant="body2" sx={{ color: 'text.disabled' }}>-</Typography>
+          <Typography variant="caption" sx={{ color: 'text.disabled' }}>-</Typography>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell sx={{ py: 0.5 }}>
         {job.zpg2d ? (
-          <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 650 }}>
+          <Typography variant="body2" sx={{ color: '#4338ca', fontWeight: 850, fontSize: '0.86rem' }}>
             {cleanZpg2d(job.zpg2d)}
           </Typography>
         ) : (
           '-'
         )}
       </TableCell>
-      <TableCell>
+      <TableCell sx={{ py: 0.5 }}>
         {job.zpg3d ? (
-          <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 650 }}>
-            {job.zpg3d}
-          </Typography>
-        ) : (
-          '-'
-        )}
-      </TableCell>
-      <TableCell>
-        <Typography variant="body2" sx={{ fontWeight: 750 }}>
           <Box
             component="span"
             sx={{
               display: 'inline-block',
-              px: 1,
-              py: 0.25,
+              maxWidth: '100%',
+              px: 0.75,
+              py: 0.2,
+              borderRadius: 1,
+              bgcolor: lacquerColor.chipBg,
+              color: lacquerColor.text,
+              border: `1px solid ${lacquerColor.border}`,
+              fontSize: '0.86rem',
+              fontWeight: 850,
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+            }}
+          >
+            {job.zpg3d}
+          </Box>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+      <TableCell sx={{ py: 0.5 }}>
+        <Typography variant="body2" sx={{ fontWeight: 800, fontSize: '0.84rem' }}>
+          <Box
+            component="span"
+            sx={{
+              display: 'inline-block',
+              px: 0.75,
+              py: 0.2,
               borderRadius: 1,
               bgcolor: lacquerColor.chipBg,
               border: `1px solid ${lacquerColor.border}`,
               color: lacquerColor.text,
-              fontWeight: 850,
+              fontWeight: 900,
             }}
           >
             {job.zltkx || '-'}
           </Box>
         </Typography>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          {job.usr00 || '-'} / {job.usr02 || '-'}
+        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25, fontSize: '0.76rem', fontWeight: 600 }}>
+           {job.usr00 || '-'} / TEMP {job.usr02 || '-'}
         </Typography>
       </TableCell>
-      <TableCell>
-        <Typography variant="body2" sx={{ fontWeight: 650, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem', width: 32 }}>เริ่ม:</Box>
+      <TableCell sx={{ py: 0.5 }}>
+        <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.35, fontSize: '0.82rem' }}>
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 700, fontSize: '0.74rem', width: 28 }}>เริ่ม:</Box>
           {formatDate(job.stdate)}
         </Typography>
-        <Typography variant="body2" sx={{ fontWeight: 650, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
-          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: '0.75rem', width: 32 }}>เสร็จ:</Box>
+        <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 0.35, mt: 0.1, fontSize: '0.82rem' }}>
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 700, fontSize: '0.74rem', width: 28 }}>เสร็จ:</Box>
           {formatDate(job.findate)}
           {isNearOrOverdue(job.findate) && (
             <Tooltip title="ใกล้ถึงกำหนดส่งหรือเกินกำหนด (ภายใน 3 วัน)" arrow>
@@ -334,7 +356,7 @@ const PlanningJobRow = React.memo(({
           )}
         </Typography>
       </TableCell>
-      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+      <TableCell sx={{ whiteSpace: 'nowrap', py: 0.5 }}>
         <Chip
           size="small"
           color={
@@ -347,15 +369,21 @@ const PlanningJobRow = React.memo(({
               : 'default'
           }
           label={job.text1 || 'NOT START'}
+          sx={{
+            height: 23,
+            fontSize: '0.72rem',
+            fontWeight: 900,
+            borderRadius: 1.5,
+          }}
         />
       </TableCell>
-      <TableCell align="center">
-        <Stack direction="row" spacing={0} sx={{ alignItems: 'center', justifyContent: 'center' }}>
+      <TableCell align="center" sx={{ py: 0.5 }}>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'center' }}>
           <Stack
             className="quick-move-btns"
-            direction="column"
+            direction="row"
             spacing={0.25}
-            sx={{ mr: 0.35 }}
+            sx={{ mr: 0.25 }}
           >
             <Tooltip title="ย้ายขึ้น 1 ลำดับ" placement="top" arrow>
               <span>
@@ -367,21 +395,21 @@ const PlanningJobRow = React.memo(({
                     onMoveUp(job.id);
                   }}
                   sx={{
-                    width: 28,
-                    height: 28,
+                    width: 22,
+                    height: 22,
                     p: 0,
                     border: '1px solid',
-                    borderColor: isFirst ? 'rgba(15, 23, 42, 0.1)' : 'rgba(79, 70, 229, 0.36)',
-                    bgcolor: isFirst ? 'rgba(15, 23, 42, 0.035)' : '#ffffff',
-                    boxShadow: isFirst ? 'none' : '0 2px 8px rgba(79, 70, 229, 0.18)',
+                    borderColor: isFirst ? 'rgba(15, 23, 42, 0.06)' : 'rgba(79, 70, 229, 0.3)',
+                    bgcolor: isFirst ? 'rgba(15, 23, 42, 0.02)' : '#ffffff',
+                    boxShadow: isFirst ? 'none' : '0 1px 4px rgba(79, 70, 229, 0.1)',
                     color: isFirst ? 'action.disabled' : '#4f46e5',
                     '&:hover': {
-                      bgcolor: 'rgba(79, 70, 229, 0.1)',
+                      bgcolor: 'rgba(79, 70, 229, 0.08)',
                       borderColor: '#4f46e5',
                     },
                   }}
                 >
-                  <ArrowUp2 size="18" color="currentColor" variant="Bold" />
+                  <ArrowUp2 size="14" color="currentColor" variant="Bold" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -395,21 +423,21 @@ const PlanningJobRow = React.memo(({
                     onMoveDown(job.id);
                   }}
                   sx={{
-                    width: 28,
-                    height: 28,
+                    width: 22,
+                    height: 22,
                     p: 0,
                     border: '1px solid',
-                    borderColor: isLast ? 'rgba(15, 23, 42, 0.1)' : 'rgba(8, 145, 178, 0.38)',
-                    bgcolor: isLast ? 'rgba(15, 23, 42, 0.035)' : '#ffffff',
-                    boxShadow: isLast ? 'none' : '0 2px 8px rgba(8, 145, 178, 0.18)',
+                    borderColor: isLast ? 'rgba(15, 23, 42, 0.06)' : 'rgba(8, 145, 178, 0.3)',
+                    bgcolor: isLast ? 'rgba(15, 23, 42, 0.02)' : '#ffffff',
+                    boxShadow: isLast ? 'none' : '0 1px 4px rgba(8, 145, 178, 0.1)',
                     color: isLast ? 'action.disabled' : '#0891b2',
                     '&:hover': {
-                      bgcolor: 'rgba(8, 145, 178, 0.1)',
+                      bgcolor: 'rgba(8, 145, 178, 0.08)',
                       borderColor: '#0891b2',
                     },
                   }}
                 >
-                  <ArrowDown2 size="18" color="currentColor" variant="Bold" />
+                  <ArrowDown2 size="14" color="currentColor" variant="Bold" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -421,6 +449,9 @@ const PlanningJobRow = React.memo(({
               size="small"
               onClick={(event) => event.stopPropagation()}
               sx={{
+                width: 22,
+                height: 22,
+                p: 0,
                 cursor: 'grab',
                 transition: 'transform 160ms ease, background-color 160ms ease',
                 '.dragging-row &': {
@@ -429,7 +460,7 @@ const PlanningJobRow = React.memo(({
                 },
               }}
             >
-              <HambergerMenu size="18" color="#64748b" />
+              <HambergerMenu size="15" color="#64748b" />
             </IconButton>
           </Tooltip>
         </Stack>
@@ -488,6 +519,9 @@ const PlanningGroupTable = React.memo(({
     () => new Map(group.map((job, index) => [job.id, index])),
     [group],
   );
+  const currentSelectedJob = selectedJob
+    ? group.find((job) => job.id === selectedJob.id) ?? selectedJob
+    : null;
 
   const openDetails = React.useCallback((job: PlanningJob) => {
     if (isMountedRef.current) {
@@ -578,13 +612,13 @@ const PlanningGroupTable = React.memo(({
               </TableCell>
               <TableCell width={72}>Seq.</TableCell>
               <TableCell>Order / Description 1</TableCell>
-              <TableCell width={130} sx={{ whiteSpace: 'nowrap' }}>OP</TableCell>
+              <TableCell width={150} sx={{ whiteSpace: 'nowrap' }}>OP</TableCell>
               <TableCell width={120}>Group 2</TableCell>
               <TableCell width={130}>Group 3</TableCell>
-              <TableCell width={190}>Description / FW. / TEMP</TableCell>
-              <TableCell width={150}>Start / Finish Date</TableCell>
-              <TableCell width={110} sx={{ whiteSpace: 'nowrap' }}>Status</TableCell>
-              <TableCell width={100} align="center">จัดคิว</TableCell>
+              <TableCell width={270}>Description / FW. / TEMP</TableCell>
+              <TableCell width={180}>Start / Finish Date</TableCell>
+              <TableCell width={120} sx={{ whiteSpace: 'nowrap' }}>Status</TableCell>
+              <TableCell width={120} align="center">จัดคิว</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -622,7 +656,7 @@ const PlanningGroupTable = React.memo(({
 
       <JobDetailDialog
         fallbackLacquerColor={fallbackLacquerColor}
-        job={selectedJob}
+        job={currentSelectedJob}
         lacquerColorMap={lacquerColorMap}
         onClose={closeDetails}
       />

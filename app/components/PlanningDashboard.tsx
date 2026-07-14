@@ -6,12 +6,12 @@ import NotificationSnackbar from './NotificationSnackbar';
 import WorkCenterCard from './WorkCenterCard';
 import RoutingBoard from './RoutingBoard';
 import RoutingMatrix from './RoutingMatrix';
-import PlanningChangeReviewDialog from './PlanningChangeReviewDialog';
 import PlanningActionButtons from './PlanningActionButtons';
 import PlanningActionBar from './PlanningActionBar';
 import type { SequenceChange } from './PlanningGroupTable';
 import {
   Alert,
+  AlertTitle,
   Box,
   Button,
   Chip,
@@ -38,16 +38,17 @@ import {
   Clock,
   Data,
   HambergerMenu,
-  Refresh,
   Setting2,
   StatusUp,
   TaskSquare,
 } from 'iconsax-react';
-import { getJobGroupId, getJobGroupSortOrder, cleanZpg2d, sortJobsWithZpg3dTransition } from '@/lib/zpg1d-helpers';
+import { getJobGroupId, getJobGroupSortOrder, getQueueGroupId, getQueueGroupSortOrder, cleanZpg2d, sortJobsWithZpg3dTransition } from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
 
 type Props = {
   data: PlanningDashboardData;
+  initialYear: number;
+  initialMonth: number;
 };
 
 const numberFormatter = new Intl.NumberFormat('th-TH');
@@ -236,7 +237,7 @@ function buildSequenceChangeMap(initialJobs: PlanningJob[], jobs: PlanningJob[])
       initialById.set(job.id, {
         seq: index + 1,
         workCenter,
-        group: job.zpg1d,
+        group: job.queueGroup?.trim() || job.zpg1d,
       });
     });
   });
@@ -246,7 +247,7 @@ function buildSequenceChangeMap(initialJobs: PlanningJob[], jobs: PlanningJob[])
       currentById.set(job.id, {
         seq: index + 1,
         workCenter,
-        group: job.zpg1d,
+        group: job.queueGroup?.trim() || job.zpg1d,
       });
     });
   });
@@ -411,8 +412,8 @@ const isNearOrOverdueForSort = (findateStr: string | null) => {
   return inclusiveDays <= 3;
 };
 
-function sortJobsWithZpg1dGroups(targetJobs: PlanningJob[]) {
-  return sortJobsWithZpg3dTransition(targetJobs, { prioritizeUrgent: true });
+function sortJobsWithZpg1dGroups(targetJobs: PlanningJob[], prioritizeUrgent = false) {
+  return sortJobsWithZpg3dTransition(targetJobs, { prioritizeUrgent });
 }
 
 
@@ -432,7 +433,7 @@ const THAI_MONTHS = [
 ];
 
 
-export default function PlanningDashboard({ data }: Props) {
+export default function PlanningDashboard({ data, initialYear, initialMonth }: Props) {
   const targetWorkCenterIds = ['111001', '111002', '111003', '111004', '111005'];
 
   const filteredRawJobs = React.useMemo(() => {
@@ -442,6 +443,10 @@ export default function PlanningDashboard({ data }: Props) {
   const filteredRawWorkCenters = React.useMemo(() => {
     return data.workCenters.filter((wc) => targetWorkCenterIds.includes(wc.arbpl));
   }, [data.workCenters]);
+
+  const externalRoutingJobs = React.useMemo(() => {
+    return data.jobs.filter((job) => !targetWorkCenterIds.includes(job.arbpl));
+  }, [data.jobs]);
 
   const [jobs, setJobs] = React.useState(filteredRawJobs);
   const [initialJobs, setInitialJobs] = React.useState(filteredRawJobs);
@@ -459,12 +464,17 @@ export default function PlanningDashboard({ data }: Props) {
 
   const defaultWorkCenter = 'ALL';
   const [selectedWorkCenter, setSelectedWorkCenter] = React.useState(defaultWorkCenter);
-  const [planningView, setPlanningView] = React.useState<'queue' | 'matrix' | 'table'>('queue');
+  const [planningView, setPlanningView] = React.useState<'queue' | 'matrix' | 'table'>('table');
+  const deferredPlanningView = React.useDeferredValue(planningView);
   const deferredWorkCenter = React.useDeferredValue(selectedWorkCenter);
 
 
-  const [selectedYear, setSelectedYear] = React.useState<number | 'ALL'>('ALL');
-  const [selectedMonth, setSelectedMonth] = React.useState<number | 'ALL'>('ALL');
+  const [selectedYear, setSelectedYear] = React.useState<number | 'ALL'>(
+    Number.isInteger(initialYear) ? initialYear : 'ALL',
+  );
+  const [selectedMonth, setSelectedMonth] = React.useState<number | 'ALL'>(
+    Number.isInteger(initialMonth) && initialMonth >= 1 && initialMonth <= 12 ? initialMonth : 'ALL',
+  );
   const [selectedStatus, setSelectedStatus] = React.useState<string>('ALL');
   const [orderSearch, setOrderSearch] = React.useState('');
   const [savingWorkCenter, setSavingWorkCenter] = React.useState<string | null>(null);
@@ -481,21 +491,33 @@ export default function PlanningDashboard({ data }: Props) {
     return Array.from(years).sort((a, b) => b - a);
   }, [filteredRawJobs]);
 
-  React.useEffect(() => {
-    // Only run on client mount to prevent hydration mismatch
-    setSelectedYear(dayjs().year());
-    setSelectedMonth(dayjs().month() + 1);
-  }, []);
+  const normalizedSelectedYear = selectedYear === 'ALL' || yearOptions.includes(selectedYear)
+    ? selectedYear
+    : 'ALL';
+  const normalizedSelectedMonth = selectedMonth === 'ALL' || (
+    typeof selectedMonth === 'number' && selectedMonth >= 1 && selectedMonth <= 12
+  )
+    ? selectedMonth
+    : 'ALL';
 
-  const deferredYear = React.useDeferredValue(selectedYear);
-  const deferredMonth = React.useDeferredValue(selectedMonth);
+  React.useEffect(() => {
+    if (selectedYear !== normalizedSelectedYear) {
+      setSelectedYear(normalizedSelectedYear);
+    }
+    if (selectedMonth !== normalizedSelectedMonth) {
+      setSelectedMonth(normalizedSelectedMonth);
+    }
+  }, [normalizedSelectedMonth, normalizedSelectedYear, selectedMonth, selectedYear]);
+
+  const deferredYear = React.useDeferredValue(normalizedSelectedYear);
+  const deferredMonth = React.useDeferredValue(normalizedSelectedMonth);
   const deferredStatus = React.useDeferredValue(selectedStatus);
   const deferredOrderSearch = React.useDeferredValue(orderSearch);
 
   const isWorkCenterPending =
     selectedWorkCenter !== deferredWorkCenter ||
-    selectedYear !== deferredYear ||
-    selectedMonth !== deferredMonth ||
+    normalizedSelectedYear !== deferredYear ||
+    normalizedSelectedMonth !== deferredMonth ||
     selectedStatus !== deferredStatus ||
     orderSearch !== deferredOrderSearch;
   const [snackbar, setSnackbar] = React.useState<{
@@ -509,8 +531,9 @@ export default function PlanningDashboard({ data }: Props) {
   });
   const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({});
   const [selectedJobIds, setSelectedJobIds] = React.useState<Set<number>>(new Set());
+  const [lastMovedJobIds, setLastMovedJobIds] = React.useState<number[]>([]);
   const [savingAll, setSavingAll] = React.useState(false);
-  const [allChangesOpen, setAllChangesOpen] = React.useState(false);
+  const [showFloatingActionBar, setShowFloatingActionBar] = React.useState(false);
 
   const selectedJobIdsRef = React.useRef(selectedJobIds);
   React.useEffect(() => {
@@ -559,6 +582,7 @@ export default function PlanningDashboard({ data }: Props) {
   }, []);
 
   const draggingJobIdRef = React.useRef<number | null>(null);
+  const draggingElementsRef = React.useRef<HTMLElement[]>([]);
   const dragOverRowRef = React.useRef<HTMLElement | null>(null);
   const dragOverRowRectRef = React.useRef<DOMRect | null>(null);
   const dragOverLastUpdateRef = React.useRef(0);
@@ -600,6 +624,8 @@ export default function PlanningDashboard({ data }: Props) {
         window.removeEventListener('wheel', dragWheelScrollListenerRef.current, true);
         dragWheelScrollListenerRef.current = null;
       }
+      draggingElementsRef.current.forEach((element) => element.classList.remove('dragging-row'));
+      draggingElementsRef.current = [];
     };
   }, []);
 
@@ -639,6 +665,7 @@ export default function PlanningDashboard({ data }: Props) {
       return true;
     });
   }, [jobs, deferredYear, deferredMonth, deferredStatus, deferredOrderSearch]);
+
   const lacquerColorMap = React.useMemo(() => {
     const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
 
@@ -688,7 +715,10 @@ export default function PlanningDashboard({ data }: Props) {
         currentJobs.length !== initialJobsList.length ||
         currentJobs.some((job, index) => {
           const initJob = initialJobsList[index];
-          return !initJob || job.id !== initJob.id || job.zpg1d !== initJob.zpg1d;
+          return !initJob ||
+            job.id !== initJob.id ||
+            job.zpg1d !== initJob.zpg1d ||
+            job.queueGroup !== initJob.queueGroup;
         });
 
       dirtyMap.set(workCenter, isDirty);
@@ -702,47 +732,50 @@ export default function PlanningDashboard({ data }: Props) {
       .filter(([_, dirty]) => dirty)
       .map(([wc]) => wc);
   }, [dirtyWorkCenters]);
+  const hasDirtyChanges = dirtyList.length > 0;
 
   const sequenceChanges = React.useMemo(
     () => buildSequenceChangeMap(initialJobs, jobs),
     [initialJobs, jobs],
   );
-  const allChangedJobs = React.useMemo(
-    () =>
-      jobs
-        .map((job) => {
-          const change = sequenceChanges.get(job.id);
-          return change ? { job, change } : null;
-        })
-        .filter((item): item is { job: PlanningJob; change: SequenceChange } => Boolean(item))
-        .sort((a, b) => {
-          const workCenterCompare = a.change.currentWorkCenter.localeCompare(b.change.currentWorkCenter, 'th', { numeric: true });
-          if (workCenterCompare !== 0) return workCenterCompare;
-          return a.change.currentSeq - b.change.currentSeq;
-        }),
-    [jobs, sequenceChanges],
-  );
 
   React.useEffect(() => {
-    if (allChangesOpen && !savingAll && allChangedJobs.length === 0) {
-      setAllChangesOpen(false);
+    if (!hasDirtyChanges) {
+      setShowFloatingActionBar(false);
+      return;
     }
-  }, [allChangesOpen, allChangedJobs.length, savingAll]);
+
+    const frame = window.requestAnimationFrame(() => {
+      setShowFloatingActionBar(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hasDirtyChanges]);
+
+  const markLastMovedJobs = React.useCallback((jobIds: number[]) => {
+    React.startTransition(() => {
+      setLastMovedJobIds(jobIds);
+    });
+  }, []);
 
   const saveAllDirty = React.useCallback(async () => {
-    if (dirtyList.length === 0) return;
+    const workCentersToSave = dirtyList.length > 0
+      ? dirtyList
+      : sortedWorkCenters.map((item) => item.arbpl);
+    if (workCentersToSave.length === 0) return;
+
     setSavingAll(true);
     setSnackbar({ open: false, message: '', severity: 'success' });
 
-    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null; arbpl: string }> = [];
+    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null; queueGroup: string | null; arbpl: string }> = [];
 
-    for (const wc of dirtyList) {
+    for (const wc of workCentersToSave) {
       const wcJobs = jobs.filter((j) => j.arbpl === wc);
       wcJobs.forEach((job, index) => {
         itemsToSave.push({
           id: job.id,
           seqno: index + 1,
           zpg1d: job.zpg1d,
+          queueGroup: job.queueGroup,
           arbpl: job.arbpl,
         });
       });
@@ -767,11 +800,26 @@ export default function PlanningDashboard({ data }: Props) {
         return;
       }
 
-      setInitialJobs(jobs);
+      const savedWorkCenterSet = new Set(workCentersToSave);
+      const nextSequenceById = new Map<number, number>();
+      for (const workCenter of workCentersToSave) {
+        jobs
+          .filter((job) => job.arbpl === workCenter)
+          .forEach((job, index) => nextSequenceById.set(job.id, index + 1));
+      }
+      const savedJobs = jobs.map((job) => (
+        savedWorkCenterSet.has(job.arbpl)
+          ? { ...job, seqno: nextSequenceById.get(job.id) ?? job.seqno }
+          : job
+      ));
+
+      setJobs(savedJobs);
+      setInitialJobs(savedJobs);
       setSelectedJobIds(new Set());
+      setLastMovedJobIds([]);
       setSnackbar({
         open: true,
-        message: `บันทึกลำดับคิวทั้งหมดลงฐานข้อมูลสำเร็จ (${dirtyList.join(', ')})`,
+        message: `บันทึก Seq. ลงฐานข้อมูลสำเร็จ (${workCentersToSave.join(', ')})`,
         severity: 'success',
       });
     } catch (err) {
@@ -784,7 +832,7 @@ export default function PlanningDashboard({ data }: Props) {
         });
       }
     }
-  }, [dirtyList, jobs]);
+  }, [dirtyList, jobs, sortedWorkCenters]);
   const filteredTotals = React.useMemo(
     () => ({
       jobs: filteredJobs.length,
@@ -855,23 +903,17 @@ export default function PlanningDashboard({ data }: Props) {
     if (draggedJobIds.includes(targetJobId)) return;
 
     let reordered = false;
+    const draggedIdSet = new Set(draggedJobIds);
 
     setJobs((current) => {
       const targetJobObj = current.find((j) => j.id === targetJobId);
       if (!targetJobObj) return current;
 
-      const draggedJobs = current.filter((j) => draggedJobIds.includes(j.id));
+      const originalIndexById = new Map(current.map((job, index) => [job.id, index]));
+      const draggedJobs = current.filter((j) => draggedIdSet.has(j.id));
       if (draggedJobs.length === 0) return current;
 
-      const next = current.map((job) => {
-        if (draggedJobIds.includes(job.id)) {
-          return {
-            ...job,
-            zpg1d: job.arbpl === workCenter ? targetJobObj.zpg1d : job.zpg1d,
-          };
-        }
-        return job;
-      });
+      const next = current;
 
       const workCenterIndexes = next
         .map((job, index) => ({ job, index }))
@@ -881,7 +923,7 @@ export default function PlanningDashboard({ data }: Props) {
       if (targetLocalIndex < 0) return current;
 
       const wcJobs = workCenterIndexes.map(item => item.job);
-      const filteredWcJobs = wcJobs.filter(job => !draggedJobIds.includes(job.id));
+      const filteredWcJobs = wcJobs.filter(job => !draggedIdSet.has(job.id));
 
       const newTargetIndex = filteredWcJobs.findIndex(job => job.id === targetJobId);
       if (newTargetIndex < 0) return current;
@@ -891,16 +933,18 @@ export default function PlanningDashboard({ data }: Props) {
       const orderedDraggedJobs = [...draggedJobs].map(job => {
         return {
           ...job,
-          zpg1d: job.arbpl === workCenter ? targetJobObj.zpg1d : job.zpg1d,
           arbpl: workCenter,
+          queueGroup: getQueueGroupId(targetJobObj) === getJobGroupId(job.zpg1d)
+            ? null
+            : targetJobObj.queueGroup?.trim() || targetJobObj.zpg1d,
         };
       }).sort((a, b) => {
-        return current.findIndex(j => j.id === a.id) - current.findIndex(j => j.id === b.id);
+        return (originalIndexById.get(a.id) ?? 0) - (originalIndexById.get(b.id) ?? 0);
       });
 
       filteredWcJobs.splice(insertIndex, 0, ...orderedDraggedJobs);
 
-      const withoutDragged = next.filter(job => !draggedJobIds.includes(job.id));
+      const withoutDragged = next.filter(job => !draggedIdSet.has(job.id));
       const firstWcIndex = withoutDragged.findIndex(job => job.arbpl === workCenter);
       const withoutWcJobs = withoutDragged.filter(job => job.arbpl !== workCenter);
 
@@ -919,7 +963,6 @@ export default function PlanningDashboard({ data }: Props) {
     });
 
     if (reordered) {
-      setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
       showDropConfirmation(draggedJobIds, position);
     }
   }, [showDropConfirmation]);
@@ -962,8 +1005,10 @@ export default function PlanningDashboard({ data }: Props) {
 
         const neighborJob = remainingJobs[firstIdx];
         if (neighborJob) {
-          targetJobs.forEach(job => {
-            job.zpg1d = neighborJob.zpg1d;
+          targetJobs.forEach((job) => {
+            job.queueGroup = getQueueGroupId(neighborJob) === getJobGroupId(job.zpg1d)
+              ? null
+              : neighborJob.queueGroup?.trim() || neighborJob.zpg1d;
           });
         }
 
@@ -982,8 +1027,10 @@ export default function PlanningDashboard({ data }: Props) {
 
         remainingJobs.splice(itemBelowIndex + 1, 0, ...targetJobs);
 
-        targetJobs.forEach(job => {
-          job.zpg1d = itemBelow.zpg1d;
+        targetJobs.forEach((job) => {
+          job.queueGroup = getQueueGroupId(itemBelow) === getJobGroupId(job.zpg1d)
+            ? null
+            : itemBelow.queueGroup?.trim() || itemBelow.zpg1d;
         });
 
         const queue = [...remainingJobs];
@@ -993,26 +1040,31 @@ export default function PlanningDashboard({ data }: Props) {
     });
 
     if (moved && targetIds.length > 0) {
+      markLastMovedJobs(targetIds);
       showDropConfirmation(targetIds, direction === 'up' ? 'before' : 'after');
     }
-  }, [showDropConfirmation]);
+  }, [markLastMovedJobs, showDropConfirmation]);
 
-  const autoArrange = React.useCallback((workCenter?: string, scopedJobIds?: number[]) => {
+  const prioritizeUrgentJobs = React.useCallback((scopedJobIds: number[]) => {
+    const scopedIdSet = new Set(scopedJobIds);
+    if (scopedIdSet.size === 0) return;
+
     setSnackbar((prev) => ({ ...prev, open: false }));
     setJobs((current) => {
-      if (!workCenter) {
-        const grouped = groupByWorkCenter(current);
-        return Object.keys(grouped)
-          .sort()
-          .flatMap((key) => sortJobsWithZpg1dGroups(grouped[key]));
-      }
-
-      const targetJobs = current.filter((job) => job.arbpl === workCenter && (!scopedJobIds || scopedJobIds.includes(job.id)));
-      const sortedGroup = sortJobsWithZpg1dGroups(targetJobs);
-      const queue = [...sortedGroup];
-      return current.map((job) =>
-        job.arbpl === workCenter && (!scopedJobIds || scopedJobIds.includes(job.id)) ? queue.shift() ?? job : job,
+      const scopedJobsByWorkCenter = groupByWorkCenter(
+        current.filter((job) => scopedIdSet.has(job.id)),
       );
+      const sortedQueues = new Map(
+        Object.entries(scopedJobsByWorkCenter).map(([workCenter, workCenterJobs]) => [
+          workCenter,
+          sortJobsWithZpg1dGroups(workCenterJobs, true),
+        ]),
+      );
+
+      return current.map((job) => {
+        if (!scopedIdSet.has(job.id)) return job;
+        return sortedQueues.get(job.arbpl)?.shift() ?? job;
+      });
     });
   }, []);
 
@@ -1058,6 +1110,7 @@ export default function PlanningDashboard({ data }: Props) {
           id: job.id,
           seqno: index + 1,
           zpg1d: job.zpg1d,
+          queueGroup: job.queueGroup,
           arbpl: job.arbpl,
         })),
     );
@@ -1081,16 +1134,22 @@ export default function PlanningDashboard({ data }: Props) {
       return;
     }
 
-    setInitialJobs((prev) => {
-      const otherJobs = prev.filter((job) => !affectedWorkCenters.has(job.arbpl));
-      const updatedJobs = affectedList.flatMap((currentWorkCenter) =>
-        affectedJobs
-          .filter((job) => job.arbpl === currentWorkCenter)
-          .map((job, index) => ({ ...job, seqno: index + 1 })),
-      );
-      return [...otherJobs, ...updatedJobs];
-    });
+    const nextSequenceById = new Map<number, number>();
+    for (const currentWorkCenter of affectedList) {
+      affectedJobs
+        .filter((job) => job.arbpl === currentWorkCenter)
+        .forEach((job, index) => nextSequenceById.set(job.id, index + 1));
+    }
+    const savedJobs = jobs.map((job) => (
+      affectedWorkCenters.has(job.arbpl)
+        ? { ...job, seqno: nextSequenceById.get(job.id) ?? job.seqno }
+        : job
+    ));
+
+    setJobs(savedJobs);
+    setInitialJobs(savedJobs);
     setSelectedJobIds(new Set());
+    setLastMovedJobIds([]);
 
     setSnackbar({
       open: true,
@@ -1107,6 +1166,11 @@ export default function PlanningDashboard({ data }: Props) {
     dragOverRowRef.current?.removeAttribute('data-drop-position');
     dragOverRowRef.current = null;
     dragOverRowRectRef.current = null;
+  }, []);
+
+  const clearDraggingElements = React.useCallback(() => {
+    draggingElementsRef.current.forEach((element) => element.classList.remove('dragging-row'));
+    draggingElementsRef.current = [];
   }, []);
 
   const runDragAutoScroll = React.useCallback(function tickDragAutoScroll() {
@@ -1183,21 +1247,16 @@ export default function PlanningDashboard({ data }: Props) {
   }, []);
 
   const handleDragStart = React.useCallback((event: React.DragEvent<HTMLElement>, jobId: number) => {
-    event.currentTarget.classList.add('dragging-row');
     event.dataTransfer.effectAllowed = 'move';
     draggingJobIdRef.current = jobId;
     startDragAutoScroll(event);
 
     let idsToDrag = [jobId];
-    setSelectedJobIds((prev) => {
-      if (prev.has(jobId)) {
-        idsToDrag = Array.from(prev);
-        return prev;
-      } else {
-        idsToDrag = [jobId];
-        return new Set([jobId]);
-      }
-    });
+    if (selectedJobIdsRef.current.has(jobId)) {
+      idsToDrag = Array.from(selectedJobIdsRef.current);
+    } else {
+      idsToDrag = [jobId];
+    }
 
     event.dataTransfer.setData('text/plain', idsToDrag.join(','));
     const dragPreview = document.createElement('div');
@@ -1219,11 +1278,14 @@ export default function PlanningDashboard({ data }: Props) {
     document.body.appendChild(dragPreview);
     event.dataTransfer.setDragImage(dragPreview, 18, 18);
     window.requestAnimationFrame(() => dragPreview.remove());
-    // Highlight all dragging rows in the DOM
+    const draggingElements: HTMLElement[] = [];
     idsToDrag.forEach(id => {
-      const row = document.querySelector(`[data-job-id="${id}"]`);
-      if (row) row.classList.add('dragging-row');
+      document.querySelectorAll<HTMLElement>(`[data-job-id="${id}"]`).forEach((element) => {
+        element.classList.add('dragging-row');
+        draggingElements.push(element);
+      });
     });
+    draggingElementsRef.current = draggingElements;
   }, [startDragAutoScroll]);
 
   const handleDrag = React.useCallback((event: React.DragEvent<HTMLElement>) => {
@@ -1289,6 +1351,7 @@ export default function PlanningDashboard({ data }: Props) {
     }
 
     if (draggedIds.length > 0) {
+      markLastMovedJobs(draggedIds);
       reorderJob(workCenter, draggedIds, targetJobId, dragDropPositionRef.current);
     }
     event.currentTarget.classList.remove('drop-target-row', 'drop-before-row', 'drop-after-row');
@@ -1296,7 +1359,8 @@ export default function PlanningDashboard({ data }: Props) {
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
-  }, [reorderJob, clearDragClasses, stopDragAutoScroll]);
+    clearDraggingElements();
+  }, [reorderJob, clearDragClasses, clearDraggingElements, markLastMovedJobs, stopDragAutoScroll]);
 
   const handleDropToLane = React.useCallback((event: React.DragEvent<HTMLElement>, workCenter: string) => {
     event.preventDefault();
@@ -1311,6 +1375,7 @@ export default function PlanningDashboard({ data }: Props) {
     }
 
     if (draggedIds.length > 0) {
+      markLastMovedJobs(draggedIds);
       setJobs((current) => {
         const draggedJobs = current.filter((job) => draggedIds.includes(job.id));
         if (draggedJobs.length === 0) return current;
@@ -1323,21 +1388,21 @@ export default function PlanningDashboard({ data }: Props) {
         const insertAt = firstTargetIndex < 0
           ? jobsOutsideTarget.length
           : remaining
-              .slice(0, firstTargetIndex)
-              .filter((job) => job.arbpl !== workCenter).length;
+            .slice(0, firstTargetIndex)
+            .filter((job) => job.arbpl !== workCenter).length;
 
         const next = [...jobsOutsideTarget];
         next.splice(insertAt, 0, ...targetJobs, ...movedJobs);
         return next;
       });
-      setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
       showDropConfirmation(draggedIds, 'after');
     }
 
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
-  }, [clearDragClasses, showDropConfirmation, stopDragAutoScroll]);
+    clearDraggingElements();
+  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll]);
 
   const handleDropToProductGroup = React.useCallback((
     event: React.DragEvent<HTMLElement>,
@@ -1356,6 +1421,7 @@ export default function PlanningDashboard({ data }: Props) {
     }
 
     if (draggedIds.length > 0) {
+      markLastMovedJobs(draggedIds);
       setJobs((current) => {
         const draggedIdSet = new Set(draggedIds);
         const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
@@ -1367,12 +1433,12 @@ export default function PlanningDashboard({ data }: Props) {
         const targetGroupOrder = getJobGroupSortOrder(groupLabel);
         const lastJobInGroup = targetWorkCenterJobs.reduce(
           (lastIndex, job, index) => (
-            getJobGroupId(job.zpg1d) === targetGroupId ? index : lastIndex
+            getQueueGroupId(job) === targetGroupId ? index : lastIndex
           ),
           -1,
         );
         const firstLaterGroup = targetWorkCenterJobs.findIndex(
-          (job) => getJobGroupSortOrder(job.zpg1d) > targetGroupOrder,
+          (job) => getQueueGroupSortOrder(job) > targetGroupOrder,
         );
         const insertInWorkCenterAt = lastJobInGroup >= 0
           ? lastJobInGroup + 1
@@ -1382,7 +1448,7 @@ export default function PlanningDashboard({ data }: Props) {
         const movedJobs = draggedJobs.map((job) => ({
           ...job,
           arbpl: workCenter,
-          zpg1d: groupLabel,
+          queueGroup: getJobGroupId(job.zpg1d) === targetGroupId ? null : groupLabel,
         }));
 
         targetWorkCenterJobs.splice(insertInWorkCenterAt, 0, ...movedJobs);
@@ -1392,31 +1458,28 @@ export default function PlanningDashboard({ data }: Props) {
         const insertAt = firstTargetIndex < 0
           ? jobsOutsideTarget.length
           : current
-              .slice(0, firstTargetIndex)
-              .filter((job) => job.arbpl !== workCenter && !draggedIdSet.has(job.id))
-              .length;
+            .slice(0, firstTargetIndex)
+            .filter((job) => job.arbpl !== workCenter && !draggedIdSet.has(job.id))
+            .length;
         const next = [...jobsOutsideTarget];
         next.splice(insertAt, 0, ...targetWorkCenterJobs);
         return next;
       });
-      setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
       showDropConfirmation(draggedIds, 'after');
     }
 
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
-  }, [clearDragClasses, showDropConfirmation, stopDragAutoScroll]);
+    clearDraggingElements();
+  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll]);
 
   const handleDragEnd = React.useCallback((event: React.DragEvent<HTMLElement>) => {
-    event.currentTarget.classList.remove('dragging-row');
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
-    document.querySelectorAll('.dragging-row').forEach(row => {
-      row.classList.remove('dragging-row');
-    });
-  }, [clearDragClasses, stopDragAutoScroll]);
+    clearDraggingElements();
+  }, [clearDragClasses, clearDraggingElements, stopDragAutoScroll]);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -1495,28 +1558,6 @@ export default function PlanningDashboard({ data }: Props) {
                     คู่มือการใช้งาน
                   </Button>
                   <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<Refresh size="16" color="#d97706" />}
-                    onClick={() => autoArrange()}
-                    sx={{
-                      borderRadius: '12px',
-                      fontWeight: 800,
-                      px: 2.25,
-                      py: 1,
-                      textTransform: 'none',
-                      color: '#d97706',
-                      borderColor: 'rgba(217, 119, 6, 0.2)',
-                      bgcolor: 'rgba(217, 119, 6, 0.02)',
-                      '&:hover': {
-                        borderColor: '#d97706',
-                        bgcolor: 'rgba(217, 119, 6, 0.05)',
-                      }
-                    }}
-                  >
-                    จัดเรียงทั้งหมด
-                  </Button>
-                  <Button
                     component={Link}
                     href="/upload"
                     size="small"
@@ -1578,6 +1619,7 @@ export default function PlanningDashboard({ data }: Props) {
                   return (
                     <Button
                       onClick={() => handleWorkCenterChange('ALL')}
+                      startIcon={<StatusUp size="16" variant={isSelected ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
                         flex: '0 0 auto',
                         px: 3,
@@ -1608,6 +1650,7 @@ export default function PlanningDashboard({ data }: Props) {
                     <Button
                       key={item.arbpl}
                       onClick={() => handleWorkCenterChange(item.arbpl)}
+                      startIcon={<Setting2 size="16" variant={isSelected ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
                         flex: '0 0 auto',
                         px: 3,
@@ -1792,7 +1835,7 @@ export default function PlanningDashboard({ data }: Props) {
                         <Select
                           labelId="year-filter-label"
                           id="year-filter"
-                          value={selectedYear}
+                          value={normalizedSelectedYear}
                           label="ปีแผนงาน (พ.ศ.)"
                           onChange={(e) => setSelectedYear(e.target.value as number | 'ALL')}
                           sx={{ borderRadius: '10px' }}
@@ -1813,7 +1856,7 @@ export default function PlanningDashboard({ data }: Props) {
                         <Select
                           labelId="month-filter-label"
                           id="month-filter"
-                          value={selectedMonth}
+                          value={normalizedSelectedMonth}
                           label="เดือน"
                           onChange={(e) => setSelectedMonth(e.target.value as number | 'ALL')}
                           sx={{ borderRadius: '10px' }}
@@ -1860,8 +1903,8 @@ export default function PlanningDashboard({ data }: Props) {
                         variant="outlined"
                         disabled={
                           selectedWorkCenter === defaultWorkCenter &&
-                          selectedYear === 'ALL' &&
-                          selectedMonth === 'ALL' &&
+                          normalizedSelectedYear === 'ALL' &&
+                          normalizedSelectedMonth === 'ALL' &&
                           selectedStatus === 'ALL' &&
                           orderSearch === ''
                         }
@@ -1963,32 +2006,66 @@ export default function PlanningDashboard({ data }: Props) {
               elevation={0}
               sx={{
                 p: { xs: 1.5, md: 2 },
-                borderRadius: 3,
+                borderRadius: 4,
                 border: '1px solid rgba(15, 23, 42, 0.06)',
                 bgcolor: '#ffffff',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.015)',
               }}
             >
-              <Stack
-                direction={{ xs: 'column', md: 'row' }}
-                spacing={1.5}
-                sx={{ justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' } }}
-              >
-                <Box>
-                  <Typography variant={'h6'} sx={{ fontWeight: 950, color: '#172033', letterSpacing: '-0.02em' }}>
-                    Production Routing
-                  </Typography>
-                  <Typography variant={'body2'} sx={{ color: 'text.secondary', fontWeight: 650 }}>
-                    ลาก Order ขึ้นลงเพื่อจัดคิว หรือลากข้ามคอลัมน์เพื่อเปลี่ยน Work Center
-                  </Typography>
-                </Box>
+              <Stack spacing={2}>
+                {/* First Row: Title & Actions */}
                 <Stack
-                  direction={{ xs: 'column', xl: 'row' }}
-                  spacing={1.25}
-                  sx={{ alignItems: { xs: 'stretch', xl: 'center' } }}
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1.5}
+                  sx={{ justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' } }}
                 >
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: { xs: 'space-between', xl: 'initial' } }}>
-                    <Box>
-                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 700 }}>
+                  <Box>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                      <Typography variant={'h6'} sx={{ fontWeight: 950, color: '#0f172a', letterSpacing: '-0.02em' }}>
+                        Production Routing
+                      </Typography>
+                      <Chip
+                        icon={
+                          planningView === 'queue' ? (
+                            <Category size="13" variant="Bold" color="currentColor" />
+                          ) : planningView === 'matrix' ? (
+                            <Data size="13" variant="Bold" color="currentColor" />
+                          ) : (
+                            <TaskSquare size="13" variant="Bold" color="currentColor" />
+                          )
+                        }
+                        label={
+                          planningView === 'queue' ? 'Compact Queue' :
+                            planningView === 'matrix' ? 'Routing Matrix' : 'Detailed Table'
+                        }
+                        size="small"
+                        sx={{
+                          bgcolor:
+                            planningView === 'queue' ? 'rgba(79, 70, 229, 0.08)' :
+                              planningView === 'matrix' ? 'rgba(8, 145, 178, 0.08)' : 'rgba(51, 65, 85, 0.08)',
+                          color:
+                            planningView === 'queue' ? '#4f46e5' :
+                              planningView === 'matrix' ? '#0891b2' : '#334155',
+                          fontWeight: 900,
+                          fontSize: '0.72rem',
+                          height: 22,
+                          borderRadius: 1.5,
+                          '& .MuiChip-icon': {
+                            color: 'currentColor',
+                            marginLeft: '4px',
+                            marginRight: '-4px',
+                          },
+                        }}
+                      />
+                    </Stack>
+                    <Typography variant={'body2'} sx={{ color: 'text.secondary', fontWeight: 600, mt: 0.5 }}>
+                      ลาก Order ขึ้นลงเพื่อจัดลำดับ หรือลากข้ามคอลัมน์เพื่อเปลี่ยน Work Center
+                    </Typography>
+                  </Box>
+
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: { xs: 'space-between', md: 'initial' } }}>
+                    <Box sx={{ borderRight: '1px solid rgba(15, 23, 42, 0.08)', pr: 2, mr: 1, display: { xs: 'none', sm: 'block' } }}>
+                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         จัดการแผน
                       </Typography>
                       <Typography variant="caption" sx={{ display: 'block', color: '#172033', fontWeight: 900 }}>
@@ -1999,10 +2076,7 @@ export default function PlanningDashboard({ data }: Props) {
                       isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
                       isSaving={savingAll || savingWorkCenter !== null}
                       onAutoArrange={() => {
-                        visibleWorkCenters.forEach((item) => {
-                          const workCenterJobs = groupedJobs[item.arbpl] ?? [];
-                          autoArrange(item.arbpl, workCenterJobs.map((job) => job.id));
-                        });
+                        prioritizeUrgentJobs(scopedJobs.map((job) => job.id));
                       }}
                       onReset={() => {
                         visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
@@ -2016,88 +2090,188 @@ export default function PlanningDashboard({ data }: Props) {
                       }}
                     />
                   </Stack>
-                  <Box sx={{ display: 'flex', p: 0.5, bgcolor: '#f1f5f9', borderRadius: 2, gap: 0.5 }}>
-                  <Button
-                    size={'small'}
-                    onClick={() => setPlanningView('queue')}
-                    sx={{
-                      px: 2,
-                      borderRadius: 1.5,
-                      fontWeight: 900,
-                      color: planningView === 'queue' ? '#ffffff' : '#64748b',
-                      bgcolor: planningView === 'queue' ? '#4f46e5' : 'transparent',
-                      boxShadow: planningView === 'queue' ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none',
-                      '&:hover': { bgcolor: planningView === 'queue' ? '#4338ca' : 'rgba(15, 23, 42, 0.04)' },
-                    }}
-                  >
-                    Compact Queue
-                  </Button>
-                  <Button
-                    size={'small'}
-                    onClick={() => setPlanningView('matrix')}
-                    sx={{
-                      px: 2,
-                      borderRadius: 1.5,
-                      fontWeight: 900,
-                      color: planningView === 'matrix' ? '#ffffff' : '#64748b',
-                      bgcolor: planningView === 'matrix' ? '#0891b2' : 'transparent',
-                      boxShadow: planningView === 'matrix' ? '0 4px 12px rgba(8, 145, 178, 0.2)' : 'none',
-                      '&:hover': { bgcolor: planningView === 'matrix' ? '#0e7490' : 'rgba(15, 23, 42, 0.04)' },
-                    }}
-                  >
-                    Routing Matrix
-                  </Button>
-                  <Button
-                    size={'small'}
-                    onClick={() => setPlanningView('table')}
-                    sx={{
-                      px: 2,
-                      borderRadius: 1.5,
-                      fontWeight: 900,
-                      color: planningView === 'table' ? '#ffffff' : '#64748b',
-                      bgcolor: planningView === 'table' ? '#334155' : 'transparent',
-                      boxShadow: planningView === 'table' ? '0 4px 12px rgba(51, 65, 85, 0.18)' : 'none',
-                      '&:hover': { bgcolor: planningView === 'table' ? '#1e293b' : 'rgba(15, 23, 42, 0.04)' },
-                    }}
-                  >
-                    Detailed Table
-                  </Button>
-                  </Box>
                 </Stack>
+
+                <Divider sx={{ borderColor: 'rgba(15, 23, 42, 0.05)' }} />
+
+                {/* Second Row: View Switcher */}
+                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                  <Box sx={{ display: 'flex', p: 0.5, bgcolor: '#f1f5f9', borderRadius: 2.5, gap: 0.5, border: '1px solid rgba(15, 23, 42, 0.03)' }}>
+                    <Button
+                      size={'small'}
+                      onClick={() => setPlanningView('table')}
+                      startIcon={<TaskSquare size="15" variant={planningView === 'table' ? 'Bold' : 'Outline'} color="currentColor" />}
+                      sx={{
+                        px: 2.5,
+                        py: 0.75,
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        fontSize: '0.84rem',
+                        textTransform: 'none',
+                        color: planningView === 'table' ? '#ffffff' : '#64748b',
+                        bgcolor: planningView === 'table' ? '#334155' : 'transparent',
+                        boxShadow: planningView === 'table' ? '0 4px 12px rgba(51, 65, 85, 0.18)' : 'none',
+                        transition: 'all 200ms ease',
+                        '&:hover': { bgcolor: planningView === 'table' ? '#1e293b' : 'rgba(15, 23, 42, 0.04)' },
+                      }}
+                    >
+                      Detailed Table
+                    </Button>
+                    <Button
+                      size={'small'}
+                      onClick={() => setPlanningView('queue')}
+                      startIcon={<Category size="15" variant={planningView === 'queue' ? 'Bold' : 'Outline'} color="currentColor" />}
+                      sx={{
+                        px: 2.5,
+                        py: 0.75,
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        fontSize: '0.84rem',
+                        textTransform: 'none',
+                        color: planningView === 'queue' ? '#ffffff' : '#64748b',
+                        bgcolor: planningView === 'queue' ? '#4f46e5' : 'transparent',
+                        boxShadow: planningView === 'queue' ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none',
+                        transition: 'all 200ms ease',
+                        '&:hover': { bgcolor: planningView === 'queue' ? '#4338ca' : 'rgba(15, 23, 42, 0.04)' },
+                      }}
+                    >
+                      Compact Queue
+                    </Button>
+                    <Button
+                      size={'small'}
+                      onClick={() => setPlanningView('matrix')}
+                      startIcon={<Data size="15" variant={planningView === 'matrix' ? 'Bold' : 'Outline'} color="currentColor" />}
+                      sx={{
+                        px: 2.5,
+                        py: 0.75,
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        fontSize: '0.84rem',
+                        textTransform: 'none',
+                        color: planningView === 'matrix' ? '#ffffff' : '#64748b',
+                        bgcolor: planningView === 'matrix' ? '#0891b2' : 'transparent',
+                        boxShadow: planningView === 'matrix' ? '0 4px 12px rgba(8, 145, 178, 0.2)' : 'none',
+                        transition: 'all 200ms ease',
+                        '&:hover': { bgcolor: planningView === 'matrix' ? '#0e7490' : 'rgba(15, 23, 42, 0.04)' },
+                      }}
+                    >
+                      Routing Matrix
+                    </Button>
+                  </Box>
+                </Box>
               </Stack>
             </Paper>
 
+            {/* Persistent Alert Info for sequence changes */}
+            {(() => {
+              const activeChanges = lastMovedJobIds
+                .map((jobId) => ({ jobId, change: sequenceChanges.get(jobId) }))
+                .filter((item): item is { jobId: number; change: SequenceChange } => Boolean(item.change));
+
+              if (activeChanges.length === 0) return null;
+
+              return (
+                <Alert
+                  severity="info"
+                  variant="outlined"
+                  sx={{
+                    mb: 2.5,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(2, 136, 209, 0.03)',
+                    borderColor: 'rgba(2, 136, 209, 0.25)',
+                    '& .MuiAlert-icon': { color: '#0288d1' },
+                  }}
+                >
+                  <AlertTitle sx={{ fontWeight: 850, color: '#0288d1', mb: 1, fontSize: '0.92rem' }}>
+                    รายการปรับปรุงลำดับคิวล่าสุด (ยังไม่ได้บันทึก)
+                  </AlertTitle>
+                  <Stack spacing={0.75} sx={{ pl: 1 }}>
+                    {activeChanges.map(({ jobId, change }) => {
+                      const job = jobs.find((j) => j.id === jobId);
+                      if (!job) return null;
+
+                      const initialJob = initialJobs.find((j) => j.id === jobId) || job;
+                      const prevOp = initialJob.vornr || '-';
+                      const prevWc = change.previousWorkCenter;
+
+                      const wcJobs = jobs.filter((j) => j.arbpl === change.currentWorkCenter);
+                      const currentIndex = wcJobs.findIndex((j) => j.id === jobId);
+
+                      let relationText = '';
+                      if (wcJobs.length <= 1) {
+                        relationText = `ท้ายคิวของ WC ${change.currentWorkCenter}`;
+                      } else if (currentIndex === 0) {
+                        const nextJob = wcJobs[1];
+                        relationText = `ด้านบน Order ${nextJob.aufnr} OP ${nextJob.vornr || '-'} WC ${change.currentWorkCenter}`;
+                      } else {
+                        const prevJob = wcJobs[currentIndex - 1];
+                        relationText = `ด้านล่าง Order ${prevJob.aufnr} OP ${prevJob.vornr || '-'} WC ${change.currentWorkCenter}`;
+                      }
+
+                      return (
+                        <Box
+                          key={jobId}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 0.5,
+                            fontSize: '0.82rem',
+                            color: '#01579b',
+                            fontWeight: 700,
+                          }}
+                        >
+                          <span style={{ color: '#64748b' }}>•</span>
+                          <strong>Order {job.aufnr} OP {prevOp} WC {prevWc}</strong>
+                          <span style={{ color: '#0288d1', fontWeight: 800 }}>➔</span>
+                          <span style={{ color: '#0f172a' }}>{relationText}</span>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </Alert>
+              );
+            })()}
+
             <Box
               sx={{
-                opacity: isWorkCenterPending ? 0.55 : 1,
-                pointerEvents: isWorkCenterPending ? 'none' : 'auto',
-                transition: 'all 180ms ease-in-out',
+                opacity: isWorkCenterPending || planningView !== deferredPlanningView ? 0.6 : 1,
+                pointerEvents: isWorkCenterPending || planningView !== deferredPlanningView ? 'none' : 'auto',
+                transition: 'opacity 150ms ease-in-out',
               }}
             >
-              {isWorkCenterPending && <LinearProgress sx={{ height: 4, borderRadius: 2, mb: 1 }} />}
+              {(isWorkCenterPending || planningView !== deferredPlanningView) && (
+                <LinearProgress sx={{ height: 4, borderRadius: 2, mb: 1.5 }} />
+              )}
 
-              {planningView === 'queue' ? (
+              {deferredPlanningView === 'queue' ? (
                 <RoutingBoard
                   workCenters={visibleWorkCenters}
                   groupedJobs={groupedJobs}
                   dirtyWorkCenters={dirtyWorkCenters}
                   selectedJobIds={selectedJobIds}
                   lacquerColorMap={lacquerColorMap}
+                  collapsedGroups={collapsedGroups}
+                  onToggleGroup={toggleGroupCollapse}
                   onToggleSelect={handleToggleSelect}
                   onDragStart={handleDragStart}
                   onDrag={handleDrag}
                   onDragOverJob={handleDragOver}
                   onDragLeaveJob={handleDragLeave}
                   onDropOnJob={handleDrop}
+                  onDropToGroup={handleDropToProductGroup}
                   onDropToLane={handleDropToLane}
                   onDragEnd={handleDragEnd}
                 />
-              ) : planningView === 'matrix' ? (
+              ) : deferredPlanningView === 'matrix' ? (
                 <RoutingMatrix
                   workCenters={visibleWorkCenters}
                   groupedJobs={groupedJobs}
+                  externalRoutingJobs={externalRoutingJobs}
                   selectedJobIds={selectedJobIds}
                   lacquerColorMap={lacquerColorMap}
+                  collapsedGroups={collapsedGroups}
+                  onToggleGroup={toggleGroupCollapse}
                   onToggleSelect={handleToggleSelect}
                   onDragStart={handleDragStart}
                   onDrag={handleDrag}
@@ -2149,17 +2323,11 @@ export default function PlanningDashboard({ data }: Props) {
         </Container>
 
         {/* Floating Action Bar */}
-        {dirtyList.length > 0 && (
+        {hasDirtyChanges && showFloatingActionBar && (
           <PlanningActionBar
-            changedJobCount={allChangedJobs.length}
-            dirtyWorkCenterCount={dirtyList.length}
             isSaving={savingAll || savingWorkCenter !== null}
-            onReviewChanges={() => setAllChangesOpen(true)}
             onAutoArrange={() => {
-              visibleWorkCenters.forEach((item) => {
-                const workCenterJobs = groupedJobs[item.arbpl] ?? [];
-                autoArrange(item.arbpl, workCenterJobs.map((job) => job.id));
-              });
+              prioritizeUrgentJobs(scopedJobs.map((job) => job.id));
             }}
             onReset={() => {
               visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
@@ -2168,15 +2336,6 @@ export default function PlanningDashboard({ data }: Props) {
           />
         )}
       </Box>
-{allChangesOpen && (
-        <PlanningChangeReviewDialog
-          open
-          onClose={() => setAllChangesOpen(false)}
-          changes={allChangedJobs}
-          isPublishing={savingAll}
-          onPublish={saveAllDirty}
-        />
-      )}
       <NotificationSnackbar
         open={snackbar.open}
         message={snackbar.message}
