@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import NotificationSnackbar from './NotificationSnackbar';
 import WorkCenterCard from './WorkCenterCard';
 import RoutingBoard from './RoutingBoard';
@@ -44,6 +45,9 @@ import {
 } from 'iconsax-react';
 import { getJobGroupId, getJobGroupSortOrder, getQueueGroupId, getQueueGroupSortOrder, cleanZpg2d, sortJobsWithZpg3dTransition } from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
+
+const PlanningAiAssistant = dynamic(() => import('./PlanningAiAssistant'), { ssr: false });
+const TARGET_WORK_CENTER_IDS = new Set(['111001', '111002', '111003', '111004', '111005']);
 
 type Props = {
   data: PlanningDashboardData;
@@ -434,18 +438,16 @@ const THAI_MONTHS = [
 
 
 export default function PlanningDashboard({ data, initialYear, initialMonth }: Props) {
-  const targetWorkCenterIds = ['111001', '111002', '111003', '111004', '111005'];
-
   const filteredRawJobs = React.useMemo(() => {
-    return data.jobs.filter((job) => targetWorkCenterIds.includes(job.arbpl));
+    return data.jobs.filter((job) => TARGET_WORK_CENTER_IDS.has(job.arbpl));
   }, [data.jobs]);
 
   const filteredRawWorkCenters = React.useMemo(() => {
-    return data.workCenters.filter((wc) => targetWorkCenterIds.includes(wc.arbpl));
+    return data.workCenters.filter((wc) => TARGET_WORK_CENTER_IDS.has(wc.arbpl));
   }, [data.workCenters]);
 
   const externalRoutingJobs = React.useMemo(() => {
-    return data.jobs.filter((job) => !targetWorkCenterIds.includes(job.arbpl));
+    return data.jobs.filter((job) => !TARGET_WORK_CENTER_IDS.has(job.arbpl));
   }, [data.jobs]);
 
   const [jobs, setJobs] = React.useState(filteredRawJobs);
@@ -853,6 +855,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   );
 
   const metricScopeLabel = selectedWorkCenter === 'ALL' ? 'รวมทุก Work center' : `Work center ${selectedWorkCenter}`;
+  const aiScopeLabel = React.useMemo(() => {
+    const yearLabel = deferredYear === 'ALL' ? 'ทุกปี' : `ปี ${deferredYear + 543}`;
+    const monthLabel = deferredMonth === 'ALL'
+      ? 'ทุกเดือน'
+      : THAI_MONTHS.find((item) => item.value === deferredMonth)?.label ?? `เดือน ${deferredMonth}`;
+    const orderLabel = deferredOrderSearch.trim() ? `Order: ${deferredOrderSearch.trim()}` : 'ทุก Order';
+    return `${metricScopeLabel} · ${yearLabel} · ${monthLabel} · ${orderLabel}`;
+  }, [deferredMonth, deferredOrderSearch, deferredYear, metricScopeLabel]);
 
   const showDropConfirmation = React.useCallback((jobIds: number | number[], placement: 'before' | 'after') => {
     const clearDropConfirmation = () => {
@@ -2335,6 +2345,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
             onSave={saveAllDirty}
           />
         )}
+        <PlanningAiAssistant jobs={scopedJobs} scopeLabel={aiScopeLabel} />
       </Box>
       <NotificationSnackbar
         open={snackbar.open}
