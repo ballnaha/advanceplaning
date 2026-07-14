@@ -13,28 +13,14 @@ export default function Loading() {
       }}
     >
       <div style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
+        <div
+          className="planning-loading-spinner"
+          aria-hidden="true"
+          style={{ margin: '0 auto 20px' }}
+        />
         <div style={{ fontSize: 20, fontWeight: 800 }}>กำลังโหลดข้อมูลแผนการผลิต</div>
         <div style={{ marginTop: 8, color: '#64748b', fontSize: 14 }}>
           ระบบกำลังอ่านข้อมูลและจัดเตรียมคิวงาน
-        </div>
-        <div
-          aria-hidden="true"
-          style={{
-            height: 4,
-            marginTop: 20,
-            overflow: 'hidden',
-            borderRadius: 999,
-            background: '#e2e8f0',
-          }}
-        >
-          <div
-            style={{
-              width: '45%',
-              height: '100%',
-              borderRadius: 999,
-              background: '#4f46e5',
-            }}
-          />
         </div>
       </div>
     </div>

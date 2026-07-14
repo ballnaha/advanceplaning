@@ -102,3 +102,26 @@ body {
     transform: translateY(-50%) translateX(0);
   }
 }
+@keyframes planningSpinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.planning-loading-spinner {
+  width: 48px;
+  height: 48px;
+  box-sizing: border-box;
+  border: 4px solid #e2e8f0;
+  border-top-color: #4f46e5;
+  border-right-color: #818cf8;
+  border-radius: 50%;
+  animation: planningSpinner 720ms linear infinite;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planning-loading-spinner {
+    animation-duration: 1400ms;
+  }
+}

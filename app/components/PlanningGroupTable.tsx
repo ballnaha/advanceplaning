@@ -297,7 +297,6 @@ const PlanningJobRow = React.memo(({
             component="span"
             sx={{
               display: 'inline-block',
-              maxWidth: '100%',
               px: 0.75,
               py: 0.2,
               borderRadius: 1,
@@ -306,9 +305,10 @@ const PlanningJobRow = React.memo(({
               border: `1px solid ${lacquerColor.border}`,
               fontSize: '0.86rem',
               fontWeight: 850,
-              whiteSpace: 'nowrap',
-              textOverflow: 'ellipsis',
-              overflow: 'hidden',
+              whiteSpace: 'normal',
+              wordBreak: 'normal',
+              overflow: 'visible',
+              lineHeight: 1.35,
             }}
           >
             {job.zpg3d}
@@ -614,7 +614,7 @@ const PlanningGroupTable = React.memo(({
               <TableCell>Order / Description 1</TableCell>
               <TableCell width={150} sx={{ whiteSpace: 'nowrap' }}>OP</TableCell>
               <TableCell width={120}>Group 2</TableCell>
-              <TableCell width={130}>Group 3</TableCell>
+              <TableCell width={160}>Group 3</TableCell>
               <TableCell width={270}>Description / FW. / TEMP</TableCell>
               <TableCell width={180}>Start / Finish Date</TableCell>
               <TableCell width={120} sx={{ whiteSpace: 'nowrap' }}>Status</TableCell>
