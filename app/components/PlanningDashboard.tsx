@@ -1553,6 +1553,16 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ width: { xs: '100%', lg: 'auto' } }}>
                   <Button
                     component={Link}
+                    href={'/scenarios'}
+                    size={'small'}
+                    variant={'outlined'}
+                    startIcon={<Setting2 size={'16'} color={'#4f46e5'} />}
+                    sx={{ borderRadius: '12px', fontWeight: 800, px: 2.25, py: 1, textTransform: 'none' }}
+                  >
+                    Scenario Preview
+                  </Button>
+                  <Button
+                    component={Link}
                     href="/guide"
                     size="small"
                     variant="outlined"

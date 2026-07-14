@@ -80,7 +80,10 @@ function round(value: number, digits = 1) {
 }
 
 function getLqCode(job: PlanningJob) {
-  return job.zlmat?.trim() || 'ไม่ระบุ L/Q';
+  // Count operational L/Q group changes the same way as the dashboard Stat Card.
+  // ZLMAT is an individual material code, so using it here over-counts changes
+  // when several material codes belong to the same ZLG3D lacquer group.
+  return job.zlg3d?.trim() || 'ไม่ระบุ L/Q';
 }
 
 function getOperationNumber(job: PlanningJob) {
