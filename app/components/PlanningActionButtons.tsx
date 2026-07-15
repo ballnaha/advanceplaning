@@ -7,17 +7,9 @@ type PlanningActionButtonsProps = {
   isDirty: boolean;
   isSaving: boolean;
   density?: 'default' | 'compact';
-  onAutoArrange: () => void;
   onReset: () => void;
   onSave: () => void;
 };
-
-const MagicWandIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5 }}>
-    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/>
-    <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5Z" fill="currentColor"/>
-  </svg>
-);
 
 const ResetIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5 }}>
@@ -38,7 +30,6 @@ export default function PlanningActionButtons({
   isDirty,
   isSaving,
   density = 'default',
-  onAutoArrange,
   onReset,
   onSave,
 }: PlanningActionButtonsProps) {
@@ -63,27 +54,6 @@ export default function PlanningActionButtons({
       spacing={compact ? 0.5 : 1}
       sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
     >
-      {/* จัดลำดับด่วน */}
-      <Button
-        size="small"
-        variant="outlined"
-        onClick={onAutoArrange}
-        disabled={isSaving}
-        sx={{
-          ...baseButtonSx,
-          color: '#475569',
-          borderColor: '#cbd5e1',
-          '&:hover': {
-            borderColor: '#6366f1',
-            color: '#4f46e5',
-            bgcolor: 'rgba(99, 102, 241, 0.04)',
-          },
-        }}
-      >
-        <MagicWandIcon />
-        จัดลำดับด่วน
-      </Button>
-
       {/* DEFAULT SETTING */}
       <Button
         size="small"

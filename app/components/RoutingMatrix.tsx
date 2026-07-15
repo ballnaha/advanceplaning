@@ -1,5 +1,4 @@
 'use client';
-
 import * as React from 'react';
 import { Box, Checkbox, Chip, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { HambergerMenu } from 'iconsax-react';
@@ -13,6 +12,7 @@ type LacquerColor = { bg: string; chipBg: string; text: string; border: string }
 type RoutingMatrixProps = {
   workCenters: WorkCenterSummary[];
   groupedJobs: Record<string, PlanningJob[]>;
+  orderSequence: string[];
   externalRoutingJobs: PlanningJob[];
   selectedJobIds: Set<number>;
   lacquerColorMap: Map<string, LacquerColor>;
@@ -288,6 +288,7 @@ const MatrixOperation = React.memo(function MatrixOperation({
 function RoutingMatrix({
   workCenters,
   groupedJobs,
+  orderSequence,
   externalRoutingJobs,
   selectedJobIds,
   lacquerColorMap,
@@ -320,8 +321,22 @@ function RoutingMatrix({
         byOrder.set(job.aufnr, current);
       }
     }
-    return Array.from(byOrder.entries()).map(([order, jobs]) => ({ order, jobs }));
-  }, [groupedJobs, workCenters]);
+    const stableRank = new Map(orderSequence.map((order, index) => [order, index]));
+    return Array.from(byOrder.entries())
+      .map(([order, jobs]) => ({
+        order,
+        jobs,
+        stableRank: stableRank.get(order),
+        sourceRank: Math.min(...jobs.map((job) => job.sourceRow)),
+      }))
+      .sort((a, b) => {
+        if (a.stableRank !== undefined || b.stableRank !== undefined) {
+          return (a.stableRank ?? Number.MAX_SAFE_INTEGER) - (b.stableRank ?? Number.MAX_SAFE_INTEGER);
+        }
+        return a.sourceRank - b.sourceRank;
+      })
+      .map(({ order, jobs }) => ({ order, jobs }));
+  }, [groupedJobs, orderSequence, workCenters]);
   const jobById = React.useMemo(
     () => new Map(orderRows.flatMap((row) => row.jobs).map((job) => [job.id, job])),
     [orderRows],
@@ -405,7 +420,14 @@ function RoutingMatrix({
   return (
     <>
       <Paper elevation={0} sx={{ overflow: 'hidden', borderRadius: 2.5, border: '1px solid rgba(15, 23, 42, 0.08)' }}>
-        <Box sx={{ overflow: 'auto', maxHeight: '82vh' }}>
+        <Box
+          sx={{
+            overflow: 'auto',
+            height: { xs: '70dvh', sm: '74dvh', lg: '78dvh' },
+            minHeight: { xs: 420, sm: 520 },
+            maxHeight: 900,
+          }}
+        >
           <Box sx={{ minWidth: `${orderColumnWidth + workCenters.length * 290}px` }}>
             <Box
               sx={{
@@ -421,7 +443,7 @@ function RoutingMatrix({
               <Box sx={{ position: 'sticky', left: 0, zIndex: 9, p: 1.25, bgcolor: '#f8fafc', borderRight: '1px solid rgba(15, 23, 42, 0.08)' }}>
                 <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 950 }}>ORDER / Description 1</Typography>
               </Box>
-              {workCenters.map((workCenter, index) => (
+              {workCenters.map((workCenter) => (
                 <Box key={workCenter.arbpl} sx={{ p: 1.25, bgcolor: '#ffffff', borderRight: '1px solid rgba(15, 23, 42, 0.06)' }}>
                   <Typography variant="body2" sx={{ color: '#172033', fontSize: '0.9rem', fontWeight: 950 }}>WC {workCenter.arbpl}</Typography>
                   
@@ -533,14 +555,8 @@ function RoutingMatrix({
                       >
                         <Stack direction="row" sx={{ mb: 0.6, alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                           <Typography variant="caption" sx={{ color: '#475569', fontSize: '0.7rem', fontWeight: 950 }}>
-                            ขั้นตอนนอกขอบเขต ({externalOperations.length})
+                            นอกเหนือ WC 111001 - 05 ({externalOperations.length})
                           </Typography>
-                          <Box
-                            component="span"
-                            sx={{ px: 0.55, py: 0.15, borderRadius: 0.75, color: '#92400e', bgcolor: '#fef3c7', fontSize: '0.6rem', fontWeight: 950, whiteSpace: 'nowrap' }}
-                          >
-                            READ ONLY
-                          </Box>
                         </Stack>
                         <Stack spacing={0.45}>
                           {visibleExternalOperations.map((operation) => (
@@ -569,10 +585,10 @@ function RoutingMatrix({
                                 >
                                   OP {operation.vornr || '-'}
                                 </Box>
-                                <Typography noWrap variant="caption" sx={{ minWidth: 0, color: '#1e293b', fontSize: '0.7rem', lineHeight: 1.15, fontWeight: 900 }}>
+                                <Typography noWrap variant="caption" sx={{ minWidth: 0, color: '#1e293b', fontSize: '0.8rem', lineHeight: 1.15, fontWeight: 900 }}>
                                   {operation.ltxa1 || 'ไม่ระบุชื่อขั้นตอน'}
                                 </Typography>
-                                <Typography noWrap variant="caption" sx={{ minWidth: 0, color: '#0369a1', fontSize: '0.65rem', lineHeight: 1.15, fontWeight: 850 }}>
+                                <Typography noWrap variant="caption" sx={{ minWidth: 0, color: '#0369a1', fontSize: '0.75rem', lineHeight: 1.15, fontWeight: 850 }}>
                                   Work Center · {operation.arbpl}
                                 </Typography>
                               </Box>

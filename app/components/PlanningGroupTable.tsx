@@ -93,6 +93,74 @@ const isNearOrOverdue = (findateStr: string | null) => {
   return inclusiveDays >= 1 && inclusiveDays <= 3;
 };
 
+function RoutingTrail({
+  operations,
+  externalRoutingJobIds,
+  currentJobId,
+}: {
+  operations: PlanningJob[];
+  externalRoutingJobIds: Set<number>;
+  currentJobId: number;
+}) {
+  if (!operations.some((operation) => externalRoutingJobIds.has(operation.id))) return null;
+
+  return (
+    <Box sx={{ mt: 0.75, pt: 0.65, borderTop: '1px dashed #e2e8f0' }}>
+      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.66rem', fontWeight: 900 }}>
+          Routing:
+        </Typography>
+        {operations.map((operation, index) => {
+          const isExternal = externalRoutingJobIds.has(operation.id);
+          const isCurrent = operation.id === currentJobId;
+          return (
+            <React.Fragment key={operation.id}>
+              {index > 0 && (
+                <Typography component="span" aria-hidden sx={{ color: '#94a3b8', fontSize: '0.68rem', fontWeight: 900 }}>
+                  →
+                </Typography>
+              )}
+              <Tooltip
+                title={`OP ${operation.vornr || '-'} · ${operation.ltxa1 || 'ไม่ระบุชื่อขั้นตอน'} · Work Center ${operation.arbpl}`}
+                arrow
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.4,
+                    px: 0.65,
+                    py: 0.3,
+                    color: isExternal ? '#92400e' : isCurrent ? '#4338ca' : '#475569',
+                    bgcolor: isExternal ? '#fffbeb' : isCurrent ? '#eef2ff' : '#f8fafc',
+                    border: '1px solid',
+                    borderStyle: isExternal ? 'dashed' : 'solid',
+                    borderColor: isExternal ? '#f59e0b' : isCurrent ? '#a5b4fc' : '#e2e8f0',
+                    borderRadius: 1,
+                    fontSize: '0.64rem',
+                    lineHeight: 1.1,
+                    fontWeight: 900,
+                    whiteSpace: 'nowrap',
+                    cursor: 'help',
+                  }}
+                >
+                  OP {operation.vornr || '-'}
+                  {isExternal && (
+                    <Box component="span" sx={{ color: '#b45309', fontSize: '0.58rem', fontWeight: 950 }}>
+                      · WC {operation.arbpl}
+                    </Box>
+                  )}
+                </Box>
+              </Tooltip>
+            </React.Fragment>
+          );
+        })}
+      </Stack>
+    </Box>
+  );
+}
+
 interface PlanningJobRowProps {
   job: PlanningJob;
   globalIndex: number;
@@ -102,6 +170,9 @@ interface PlanningJobRowProps {
   isFirst: boolean;
   isLast: boolean;
   workCenter: string;
+  showRoutingTrail: boolean;
+  routingOperations: PlanningJob[];
+  externalRoutingJobIds: Set<number>;
   onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
   onDrag: (event: React.DragEvent<HTMLTableRowElement>) => void;
   onDragOver: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
@@ -122,6 +193,9 @@ const PlanningJobRow = React.memo(({
   isFirst,
   isLast,
   workCenter,
+  showRoutingTrail,
+  routingOperations,
+  externalRoutingJobIds,
   onDragStart,
   onDrag,
   onDragOver,
@@ -146,7 +220,7 @@ const PlanningJobRow = React.memo(({
       onClick={() => onOpenDetails(job)}
       sx={{
         cursor: 'pointer',
-        transition: 'background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms ease',
+        transition: 'background-color 120ms ease, opacity 120ms ease, transform 120ms ease',
         opacity: 1,
         bgcolor: isSelected ? 'rgba(79, 70, 229, 0.05) !important' : 'transparent',
         boxShadow: `inset 4px 0 0 ${lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
@@ -206,14 +280,14 @@ const PlanningJobRow = React.memo(({
         '&.drop-confirm-after td:first-of-type::after': { top: '100%' },
         '&.drop-target-row': {
           bgcolor: 'rgba(79, 70, 229, 0.055)',
-          boxShadow: 'inset 4px 0 0 #4f46e5, 0 10px 24px rgba(79, 70, 229, 0.08)',
+          boxShadow: 'inset 4px 0 0 #4f46e5',
           position: 'relative',
         },
         '&.drop-before-row': {
-          boxShadow: 'inset 4px 0 0 #4f46e5, inset 0 3px 0 #4f46e5, 0 10px 24px rgba(79, 70, 229, 0.08)',
+          boxShadow: 'inset 4px 0 0 #4f46e5, inset 0 3px 0 #4f46e5',
         },
         '&.drop-after-row': {
-          boxShadow: 'inset 4px 0 0 #0891b2, inset 0 -3px 0 #0891b2, 0 10px 24px rgba(8, 145, 178, 0.08)',
+          boxShadow: 'inset 4px 0 0 #0891b2, inset 0 -3px 0 #0891b2',
         },
         '& td': {
           boxSizing: 'border-box',
@@ -269,6 +343,13 @@ const PlanningJobRow = React.memo(({
         <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.1, fontSize: '0.8rem', fontWeight: 600 }}>
           {job.zptkx || '-'}
         </Typography>
+        {showRoutingTrail && (
+          <RoutingTrail
+            operations={routingOperations}
+            externalRoutingJobIds={externalRoutingJobIds}
+            currentJobId={job.id}
+          />
+        )}
       </TableCell>
       <TableCell sx={{ py: 0.5 }}>
         {(job.vornr || job.ltxa1) ? (
@@ -474,6 +555,8 @@ PlanningJobRow.displayName = 'PlanningJobRow';
 export interface PlanningGroupTableProps {
   groupJobs: PlanningJob[];
   group: PlanningJob[];
+  routingOperationsByOrder: Map<string, PlanningJob[]>;
+  externalRoutingJobIds: Set<number>;
   groupLabel: string;
   workCenter: string;
   isCollapsed: boolean;
@@ -492,9 +575,30 @@ export interface PlanningGroupTableProps {
   onMoveDown: (jobId: number) => void;
 }
 
+function routingOperationsEqualForJobs(
+  previous: Map<string, PlanningJob[]>,
+  next: Map<string, PlanningJob[]>,
+  jobs: PlanningJob[],
+) {
+  const orders = new Set(jobs.map((job) => job.aufnr));
+  for (const order of orders) {
+    const previousOperations = previous.get(order) ?? [];
+    const nextOperations = next.get(order) ?? [];
+    if (
+      previousOperations.length !== nextOperations.length ||
+      previousOperations.some((operation, index) => operation !== nextOperations[index])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const PlanningGroupTable = React.memo(({
   groupJobs,
   group,
+  routingOperationsByOrder,
+  externalRoutingJobIds,
   groupLabel,
   workCenter,
   isCollapsed,
@@ -519,6 +623,13 @@ const PlanningGroupTable = React.memo(({
     () => new Map(group.map((job, index) => [job.id, index])),
     [group],
   );
+  const firstVisibleJobIdByOrder = React.useMemo(() => {
+    const firstJobByOrder = new Map<string, number>();
+    groupJobs.forEach((job) => {
+      if (!firstJobByOrder.has(job.aufnr)) firstJobByOrder.set(job.aufnr, job.id);
+    });
+    return firstJobByOrder;
+  }, [groupJobs]);
   const currentSelectedJob = selectedJob
     ? group.find((job) => job.id === selectedJob.id) ?? selectedJob
     : null;
@@ -638,6 +749,9 @@ const PlanningGroupTable = React.memo(({
                   isFirst={globalIndex === 0}
                   isLast={globalIndex === group.length - 1}
                   workCenter={workCenter}
+                  showRoutingTrail={firstVisibleJobIdByOrder.get(job.aufnr) === job.id}
+                  routingOperations={routingOperationsByOrder.get(job.aufnr) ?? []}
+                  externalRoutingJobIds={externalRoutingJobIds}
                   onDragStart={onDragStart}
                   onDrag={onDrag}
                   onDragOver={onDragOver}
@@ -667,7 +781,13 @@ const PlanningGroupTable = React.memo(({
     prevProps.isCollapsed === nextProps.isCollapsed &&
     prevProps.groupJobs.length === nextProps.groupJobs.length &&
     prevProps.groupJobs.every((job, i) => job === nextProps.groupJobs[i]) &&
-    prevProps.groupJobs.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id))
+    prevProps.groupJobs.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id)) &&
+    routingOperationsEqualForJobs(
+      prevProps.routingOperationsByOrder,
+      nextProps.routingOperationsByOrder,
+      prevProps.groupJobs,
+    ) &&
+    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds
   );
 });
 

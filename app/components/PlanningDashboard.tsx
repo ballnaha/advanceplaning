@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
 import NotificationSnackbar from './NotificationSnackbar';
 import WorkCenterCard from './WorkCenterCard';
 import RoutingBoard from './RoutingBoard';
@@ -15,6 +14,7 @@ import {
   AlertTitle,
   Box,
   Button,
+  Checkbox,
   Chip,
   Container,
   Divider,
@@ -43,11 +43,11 @@ import {
   StatusUp,
   TaskSquare,
 } from 'iconsax-react';
-import { getJobGroupId, getJobGroupSortOrder, getQueueGroupId, getQueueGroupSortOrder, cleanZpg2d, sortJobsWithZpg3dTransition } from '@/lib/zpg1d-helpers';
+import { getJobGroupId, getJobGroupSortOrder, getQueueGroupId, getQueueGroupSortOrder, cleanZpg2d } from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
 
-const PlanningAiAssistant = dynamic(() => import('./PlanningAiAssistant'), { ssr: false });
 const TARGET_WORK_CENTER_IDS = new Set(['111001', '111002', '111003', '111004', '111005']);
+const STATUS_FILTER_OPTIONS = ['NOT START', 'START', 'WAIT', 'DONE'] as const;
 
 type Props = {
   data: PlanningDashboardData;
@@ -63,6 +63,25 @@ const dragWheelScrollMultiplier = 1;
 
 function formatNumber(value: number) {
   return numberFormatter.format(value);
+}
+
+function getStatusLabel(value: string | null) {
+  return value?.trim().toUpperCase() || 'NOT START';
+}
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case 'START':
+      return { color: '#854d0e', bgcolor: '#fef9c3', borderColor: '#eab308' };
+    case 'WAIT':
+      return { color: '#b91c1c', bgcolor: '#fee2e2', borderColor: '#ef4444' };
+    case 'DONE':
+      return { color: '#166534', bgcolor: '#dcfce7', borderColor: '#22c55e' };
+    case 'NOT START':
+      return { color: '#475569', bgcolor: '#f1f5f9', borderColor: '#94a3b8' };
+    default:
+      return { color: '#6d28d9', bgcolor: '#ede9fe', borderColor: '#ddd6fe' };
+  }
 }
 
 
@@ -416,11 +435,6 @@ const isNearOrOverdueForSort = (findateStr: string | null) => {
   return inclusiveDays <= 3;
 };
 
-function sortJobsWithZpg1dGroups(targetJobs: PlanningJob[], prioritizeUrgent = false) {
-  return sortJobsWithZpg3dTransition(targetJobs, { prioritizeUrgent });
-}
-
-
 const THAI_MONTHS = [
   { value: 1, label: 'มกราคม' },
   { value: 2, label: 'กุมภาพันธ์' },
@@ -477,7 +491,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const [selectedMonth, setSelectedMonth] = React.useState<number | 'ALL'>(
     Number.isInteger(initialMonth) && initialMonth >= 1 && initialMonth <= 12 ? initialMonth : 'ALL',
   );
-  const [selectedStatus, setSelectedStatus] = React.useState<string>('ALL');
+  const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>(() => [...STATUS_FILTER_OPTIONS]);
   const [orderSearch, setOrderSearch] = React.useState('');
   const [savingWorkCenter, setSavingWorkCenter] = React.useState<string | null>(null);
 
@@ -513,14 +527,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
   const deferredYear = React.useDeferredValue(normalizedSelectedYear);
   const deferredMonth = React.useDeferredValue(normalizedSelectedMonth);
-  const deferredStatus = React.useDeferredValue(selectedStatus);
+  const deferredStatuses = React.useDeferredValue(selectedStatuses);
   const deferredOrderSearch = React.useDeferredValue(orderSearch);
 
   const isWorkCenterPending =
     selectedWorkCenter !== deferredWorkCenter ||
     normalizedSelectedYear !== deferredYear ||
     normalizedSelectedMonth !== deferredMonth ||
-    selectedStatus !== deferredStatus ||
+    selectedStatuses !== deferredStatuses ||
     orderSearch !== deferredOrderSearch;
   const [snackbar, setSnackbar] = React.useState<{
     open: boolean;
@@ -594,7 +608,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const dragAutoScrollListenerRef = React.useRef<((event: DragEvent) => void) | null>(null);
   const dragWheelScrollListenerRef = React.useRef<((event: WheelEvent) => void) | null>(null);
   const dropConfirmTimerRef = React.useRef<number | null>(null);
-  const dropConfirmRowRef = React.useRef<HTMLElement | null>(null);
+  const dropConfirmRowsRef = React.useRef<HTMLElement[]>([]);
   const dropConfirmFrameRef = React.useRef<number | null>(null);
   const isMountedRef = React.useRef(false);
 
@@ -612,8 +626,10 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         window.clearTimeout(dropConfirmTimerRef.current);
         dropConfirmTimerRef.current = null;
       }
-      dropConfirmRowRef.current?.classList.remove('drop-confirm-row', 'drop-confirm-before', 'drop-confirm-after');
-      dropConfirmRowRef.current = null;
+      dropConfirmRowsRef.current.forEach((row) => {
+        row.classList.remove('drop-confirm-row', 'drop-confirm-before', 'drop-confirm-after');
+      });
+      dropConfirmRowsRef.current = [];
       if (dragAutoScrollFrameRef.current !== null) {
         window.cancelAnimationFrame(dragAutoScrollFrameRef.current);
         dragAutoScrollFrameRef.current = null;
@@ -628,10 +644,11 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       }
       draggingElementsRef.current.forEach((element) => element.classList.remove('dragging-row'));
       draggingElementsRef.current = [];
+      document.body.classList.remove('planning-drag-active');
     };
   }, []);
 
-  const filteredJobs = React.useMemo(() => {
+  const dateAndOrderFilteredJobs = React.useMemo(() => {
     const normalizedOrderSearch = deferredOrderSearch.trim().toLocaleUpperCase('th-TH');
     return jobs.filter((job) => {
       if (normalizedOrderSearch && !job.aufnr.toLocaleUpperCase('th-TH').includes(normalizedOrderSearch)) {
@@ -654,19 +671,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         }
       }
 
-      // 2. Status filtering
-      if (deferredStatus !== 'ALL') {
-        const jobStatus = job.text1 || 'null';
-        if (deferredStatus === 'null') {
-          if (job.text1 && job.text1 !== '') return false;
-        } else {
-          if (jobStatus.toUpperCase() !== deferredStatus.toUpperCase()) return false;
-        }
-      }
-
       return true;
     });
-  }, [jobs, deferredYear, deferredMonth, deferredStatus, deferredOrderSearch]);
+  }, [jobs, deferredYear, deferredMonth, deferredOrderSearch]);
+  const filteredJobs = React.useMemo(() => {
+    if (deferredStatuses.length === STATUS_FILTER_OPTIONS.length) return dateAndOrderFilteredJobs;
+    const selectedStatusSet = new Set(deferredStatuses);
+    return dateAndOrderFilteredJobs.filter((job) => selectedStatusSet.has(getStatusLabel(job.text1)));
+  }, [dateAndOrderFilteredJobs, deferredStatuses]);
 
   const lacquerColorMap = React.useMemo(() => {
     const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
@@ -679,7 +691,44 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     });
     return map;
   }, [jobs]);
+  const routingOperationsByOrder = React.useMemo(() => {
+    const byOrder = new Map<string, PlanningJob[]>();
+    for (const job of [...jobs, ...externalRoutingJobs]) {
+      const operations = byOrder.get(job.aufnr);
+      if (operations) {
+        operations.push(job);
+      } else {
+        byOrder.set(job.aufnr, [job]);
+      }
+    }
+    for (const operations of byOrder.values()) {
+      operations.sort((a, b) => {
+        const operationCompare = (a.vornr ?? '').localeCompare(b.vornr ?? '', 'th', { numeric: true });
+        return operationCompare !== 0 ? operationCompare : a.sourceRow - b.sourceRow;
+      });
+    }
+    return byOrder;
+  }, [externalRoutingJobs, jobs]);
+  const externalRoutingJobIds = React.useMemo(
+    () => new Set(externalRoutingJobs.map((job) => job.id)),
+    [externalRoutingJobs],
+  );
   const groupedJobs = React.useMemo(() => groupByWorkCenter(filteredJobs), [filteredJobs]);
+  const matrixOrderSequence = React.useMemo(() => {
+    const initialGroups = groupByWorkCenter(initialJobs);
+    const seenOrders = new Set<string>();
+    const sequence: string[] = [];
+
+    for (const workCenter of sortedWorkCenters) {
+      for (const job of initialGroups[workCenter.arbpl] ?? []) {
+        if (seenOrders.has(job.aufnr)) continue;
+        seenOrders.add(job.aufnr);
+        sequence.push(job.aufnr);
+      }
+    }
+
+    return sequence;
+  }, [initialJobs, sortedWorkCenters]);
   const scopedJobs = React.useMemo(
     () =>
       deferredWorkCenter === 'ALL'
@@ -687,16 +736,24 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         : filteredJobs.filter((job) => job.arbpl === deferredWorkCenter),
     [filteredJobs, deferredWorkCenter],
   );
+  const statusScopeJobs = React.useMemo(
+    () =>
+      deferredWorkCenter === 'ALL'
+        ? dateAndOrderFilteredJobs
+        : dateAndOrderFilteredJobs.filter((job) => job.arbpl === deferredWorkCenter),
+    [dateAndOrderFilteredJobs, deferredWorkCenter],
+  );
   const scopedGroups = React.useMemo(() => groupByWorkCenter(scopedJobs), [scopedJobs]);
   const totalChangeovers = React.useMemo(
     () => Object.values(scopedGroups).reduce((sum, group) => sum + calculateChangeovers(group), 0),
     [scopedGroups],
   );
   const visibleJobCount = scopedJobs.length;
-  const selectedSummary = React.useMemo(
-    () => sortedWorkCenters.find((item) => item.arbpl === selectedWorkCenter),
-    [selectedWorkCenter, sortedWorkCenters],
-  );
+  const machineTabIndex = React.useMemo(() => {
+    if (selectedWorkCenter === 'ALL') return 0;
+    const workCenterIndex = sortedWorkCenters.findIndex((item) => item.arbpl === selectedWorkCenter);
+    return workCenterIndex >= 0 ? workCenterIndex + 1 : 0;
+  }, [selectedWorkCenter, sortedWorkCenters]);
   const visibleWorkCenters = React.useMemo(
     () =>
       deferredWorkCenter === 'ALL'
@@ -838,7 +895,6 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const filteredTotals = React.useMemo(
     () => ({
       jobs: filteredJobs.length,
-      waitJobs: filteredJobs.filter((job) => job.text1?.toUpperCase() === 'WAIT').length,
       optime: Number(filteredJobs.reduce((sum, job) => sum + job.optime, 0).toFixed(1)),
       quantity: filteredJobs.reduce((sum, job) => sum + job.mgvrg, 0),
     }),
@@ -847,28 +903,44 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const scopedTotals = React.useMemo(
     () => ({
       jobs: scopedJobs.length,
-      waitJobs: scopedJobs.filter((job) => job.text1?.toUpperCase() === 'WAIT').length,
       optime: Number(scopedJobs.reduce((sum, job) => sum + job.optime, 0).toFixed(1)),
       quantity: scopedJobs.reduce((sum, job) => sum + job.mgvrg, 0),
     }),
     [scopedJobs],
   );
+  const statusBreakdown = React.useMemo(() => {
+    const counts = new Map<string, number>([
+      ['NOT START', 0],
+      ['START', 0],
+      ['WAIT', 0],
+      ['DONE', 0],
+    ]);
+    statusScopeJobs.forEach((job) => {
+      const status = getStatusLabel(job.text1);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    });
+
+    const preferredOrder = new Map([
+      ['NOT START', 0],
+      ['START', 1],
+      ['WAIT', 2],
+      ['DONE', 3],
+    ]);
+    return Array.from(counts, ([status, count]) => ({ status, count }))
+      .sort((a, b) =>
+        (preferredOrder.get(a.status) ?? Number.MAX_SAFE_INTEGER) -
+          (preferredOrder.get(b.status) ?? Number.MAX_SAFE_INTEGER) ||
+        a.status.localeCompare(b.status, 'th', { numeric: true }),
+      );
+  }, [statusScopeJobs]);
 
   const metricScopeLabel = selectedWorkCenter === 'ALL' ? 'รวมทุก Work center' : `Work center ${selectedWorkCenter}`;
-  const aiScopeLabel = React.useMemo(() => {
-    const yearLabel = deferredYear === 'ALL' ? 'ทุกปี' : `ปี ${deferredYear + 543}`;
-    const monthLabel = deferredMonth === 'ALL'
-      ? 'ทุกเดือน'
-      : THAI_MONTHS.find((item) => item.value === deferredMonth)?.label ?? `เดือน ${deferredMonth}`;
-    const orderLabel = deferredOrderSearch.trim() ? `Order: ${deferredOrderSearch.trim()}` : 'ทุก Order';
-    return `${metricScopeLabel} · ${yearLabel} · ${monthLabel} · ${orderLabel}`;
-  }, [deferredMonth, deferredOrderSearch, deferredYear, metricScopeLabel]);
-
   const showDropConfirmation = React.useCallback((jobIds: number | number[], placement: 'before' | 'after') => {
     const clearDropConfirmation = () => {
-      document.querySelectorAll('.drop-confirm-row').forEach(row => {
+      dropConfirmRowsRef.current.forEach((row) => {
         row.classList.remove('drop-confirm-row', 'drop-confirm-before', 'drop-confirm-after');
       });
+      dropConfirmRowsRef.current = [];
     };
 
     clearDropConfirmation();
@@ -896,6 +968,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       });
 
       if (rows.length > 0) {
+        dropConfirmRowsRef.current = rows;
         dropConfirmTimerRef.current = window.setTimeout(() => {
           clearDropConfirmation();
           dropConfirmTimerRef.current = null;
@@ -1055,49 +1128,62 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     }
   }, [markLastMovedJobs, showDropConfirmation]);
 
-  const prioritizeUrgentJobs = React.useCallback((scopedJobIds: number[]) => {
-    const scopedIdSet = new Set(scopedJobIds);
-    if (scopedIdSet.size === 0) return;
+  // DEFAULT SETTING = discard all changes connected to the selected Work centers.
+  // A cross-WC move affects both ends, so restore the connected centers atomically.
+  const resetWorkCentersToInitial = React.useCallback((workCenters: string[]) => {
+    const requestedWorkCenters = new Set(workCenters);
+    if (requestedWorkCenters.size === 0) return;
 
-    setSnackbar((prev) => ({ ...prev, open: false }));
     setJobs((current) => {
-      const scopedJobsByWorkCenter = groupByWorkCenter(
-        current.filter((job) => scopedIdSet.has(job.id)),
-      );
-      const sortedQueues = new Map(
-        Object.entries(scopedJobsByWorkCenter).map(([workCenter, workCenterJobs]) => [
-          workCenter,
-          sortJobsWithZpg1dGroups(workCenterJobs, true),
-        ]),
-      );
+      const currentById = new Map(current.map((job) => [job.id, job]));
+      const affectedWorkCenters = new Set(requestedWorkCenters);
 
-      return current.map((job) => {
-        if (!scopedIdSet.has(job.id)) return job;
-        return sortedQueues.get(job.arbpl)?.shift() ?? job;
-      });
-    });
-  }, []);
-
-  // DEFAULT SETTING = Discard unsaved changes, revert to last committed DB state
-  const resetWorkCenterToInitial = React.useCallback((workCenter: string) => {
-    setJobs((current) => {
-      const otherJobs = current.filter((job) => job.arbpl !== workCenter);
-      const result: PlanningJob[] = [];
-      for (const job of initialJobs) {
-        if (job.arbpl === workCenter) {
-          result.push(job); // restore committed DB data & order
-        } else if (otherJobs.find((j) => j.id === job.id)) {
-          result.push(current.find((j) => j.id === job.id) ?? job);
+      let expanded = true;
+      while (expanded) {
+        expanded = false;
+        for (const initialJob of initialJobs) {
+          const currentJob = currentById.get(initialJob.id) ?? initialJob;
+          if (
+            affectedWorkCenters.has(initialJob.arbpl) ||
+            affectedWorkCenters.has(currentJob.arbpl)
+          ) {
+            if (!affectedWorkCenters.has(initialJob.arbpl)) {
+              affectedWorkCenters.add(initialJob.arbpl);
+              expanded = true;
+            }
+            if (!affectedWorkCenters.has(currentJob.arbpl)) {
+              affectedWorkCenters.add(currentJob.arbpl);
+              expanded = true;
+            }
+          }
         }
+      }
+
+      const currentGroups = groupByWorkCenter(current);
+      const initialGroups = groupByWorkCenter(initialJobs);
+      const workCenterOrder = Array.from(new Set([
+        ...sortedWorkCenters.map((item) => item.arbpl),
+        ...initialJobs.map((job) => job.arbpl),
+        ...current.map((job) => job.arbpl),
+      ])).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+
+      const result: PlanningJob[] = [];
+      for (const workCenter of workCenterOrder) {
+        const group = affectedWorkCenters.has(workCenter)
+          ? initialGroups[workCenter] ?? []
+          : currentGroups[workCenter] ?? [];
+        result.push(...group);
       }
       return result;
     });
     setSnackbar({
       open: true,
-      message: `ล้างการเปลี่ยนแปลงของ ${workCenter} แล้ว — คืนค่าจาก DB ล่าสุด`,
+      message: workCenters.length > 1
+        ? 'ล้างการเปลี่ยนแปลงของ Work center ที่เลือกแล้ว — คืนค่าจาก DB ล่าสุด'
+        : `ล้างการเปลี่ยนแปลงของ ${workCenters[0]} แล้ว — คืนค่าจาก DB ล่าสุด`,
       severity: 'info',
     });
-  }, [initialJobs]);
+  }, [initialJobs, sortedWorkCenters]);
 
   const saveSequence = React.useCallback(async (workCenter: string) => {
     setSavingWorkCenter(workCenter);
@@ -1181,6 +1267,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const clearDraggingElements = React.useCallback(() => {
     draggingElementsRef.current.forEach((element) => element.classList.remove('dragging-row'));
     draggingElementsRef.current = [];
+    document.body.classList.remove('planning-drag-active');
   }, []);
 
   const runDragAutoScroll = React.useCallback(function tickDragAutoScroll() {
@@ -1259,6 +1346,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const handleDragStart = React.useCallback((event: React.DragEvent<HTMLElement>, jobId: number) => {
     event.dataTransfer.effectAllowed = 'move';
     draggingJobIdRef.current = jobId;
+    document.body.classList.add('planning-drag-active');
     startDragAutoScroll(event);
 
     let idsToDrag = [jobId];
@@ -1387,10 +1475,11 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     if (draggedIds.length > 0) {
       markLastMovedJobs(draggedIds);
       setJobs((current) => {
-        const draggedJobs = current.filter((job) => draggedIds.includes(job.id));
+        const draggedIdSet = new Set(draggedIds);
+        const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
         if (draggedJobs.length === 0) return current;
 
-        const remaining = current.filter((job) => !draggedIds.includes(job.id));
+        const remaining = current.filter((job) => !draggedIdSet.has(job.id));
         const targetJobs = remaining.filter((job) => job.arbpl === workCenter);
         const movedJobs = draggedJobs.map((job) => ({ ...job, arbpl: workCenter }));
         const firstTargetIndex = remaining.findIndex((job) => job.arbpl === workCenter);
@@ -1553,16 +1642,6 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ width: { xs: '100%', lg: 'auto' } }}>
                   <Button
                     component={Link}
-                    href={'/scenarios'}
-                    size={'small'}
-                    variant={'outlined'}
-                    startIcon={<Setting2 size={'16'} color={'#4f46e5'} />}
-                    sx={{ borderRadius: '12px', fontWeight: 800, px: 2.25, py: 1, textTransform: 'none' }}
-                  >
-                    Scenario Preview
-                  </Button>
-                  <Button
-                    component={Link}
                     href="/guide"
                     size="small"
                     variant="outlined"
@@ -1620,43 +1699,73 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
               <Box
                 sx={{
+                  position: 'relative',
                   display: 'flex',
-                  gap: 0.75,
-                  bgcolor: 'rgba(15, 23, 42, 0.03)',
+                  flex: 1,
+                  minWidth: 0,
+                  gap: 0.5,
+                  bgcolor: '#e9edf3',
                   p: 0.5,
                   borderRadius: '14px',
+                  border: '1px solid rgba(15, 23, 42, 0.06)',
+                  boxShadow: 'inset 0 1px 3px rgba(15, 23, 42, 0.08)',
                   overflowX: 'auto',
-                  width: { xs: '100%', md: 'auto' },
+                  width: '100%',
                   scrollSnapType: 'x mandatory',
+                  scrollBehavior: 'smooth',
                   '&::-webkit-scrollbar': {
                     height: 0, // hide scrollbar for tabs
                   },
                 }}
               >
+                <Box
+                  aria-hidden
+                  sx={{
+                    position: 'absolute',
+                    top: 4,
+                    bottom: 4,
+                    left: 4,
+                    width: 132,
+                    borderRadius: '10px',
+                    bgcolor: selectedWorkCenter === 'ALL' ? '#b45309' : '#4f46e5',
+                    boxShadow:
+                      selectedWorkCenter === 'ALL'
+                        ? '0 3px 10px rgba(180, 83, 9, 0.3)'
+                        : '0 3px 10px rgba(79, 70, 229, 0.3)',
+                    transform: `translateX(${machineTabIndex * 136}px)`,
+                    transition: 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1), background-color 260ms ease, box-shadow 260ms ease',
+                    willChange: 'transform',
+                  }}
+                />
                 {/* "ดูทั้งหมด" Tab */}
                 {(() => {
                   const isSelected = selectedWorkCenter === 'ALL';
                   return (
                     <Button
+                      disableRipple
+                      aria-pressed={isSelected}
                       onClick={() => handleWorkCenterChange('ALL')}
                       startIcon={<StatusUp size="16" variant={isSelected ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
-                        flex: '0 0 auto',
-                        px: 3,
-                        py: 0.75,
+                        zIndex: 1,
+                        flex: '0 0 132px',
+                        minWidth: 132,
+                        px: 1,
+                        py: 0.85,
                         borderRadius: '10px',
                         textTransform: 'none',
                         fontWeight: 850,
                         fontSize: '0.85rem',
-                        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: 'none !important', // prevent theme hover lift
-                        boxShadow: isSelected ? '0 2px 8px rgba(180, 83, 9, 0.12)' : 'none !important',
-                        bgcolor: isSelected ? '#b45309' : 'transparent',
+                        scrollSnapAlign: 'center',
+                        transition: 'color 220ms ease, transform 160ms ease',
+                        boxShadow: 'none !important',
+                        bgcolor: 'transparent',
                         color: isSelected ? '#ffffff' : 'text.secondary',
                         '&:hover': {
-                          bgcolor: isSelected ? '#9a3412' : 'rgba(15, 23, 42, 0.04)',
+                          bgcolor: 'transparent',
                           color: isSelected ? '#ffffff' : 'text.primary',
                         },
+                        '&:active': { transform: 'scale(0.97)' },
                       }}
                     >
                       ดูทั้งหมด
@@ -1669,25 +1778,30 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   return (
                     <Button
                       key={item.arbpl}
+                      disableRipple
+                      aria-pressed={isSelected}
                       onClick={() => handleWorkCenterChange(item.arbpl)}
                       startIcon={<Setting2 size="16" variant={isSelected ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
-                        flex: '0 0 auto',
-                        px: 3,
-                        py: 0.75,
+                        zIndex: 1,
+                        flex: '0 0 132px',
+                        minWidth: 132,
+                        px: 1,
+                        py: 0.85,
                         borderRadius: '10px',
                         textTransform: 'none',
                         fontWeight: 850,
                         fontSize: '0.85rem',
-                        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: 'none !important', // prevent theme hover lift
-                        boxShadow: isSelected ? '0 2px 8px rgba(79, 70, 229, 0.16)' : 'none !important',
-                        bgcolor: isSelected ? 'primary.main' : 'transparent',
+                        scrollSnapAlign: 'center',
+                        transition: 'color 220ms ease, transform 160ms ease',
+                        boxShadow: 'none !important',
+                        bgcolor: 'transparent',
                         color: isSelected ? '#ffffff' : 'text.secondary',
                         '&:hover': {
-                          bgcolor: isSelected ? 'primary.dark' : 'rgba(15, 23, 42, 0.04)',
+                          bgcolor: 'transparent',
                           color: isSelected ? '#ffffff' : 'text.primary',
                         },
+                        '&:active': { transform: 'scale(0.97)' },
                       }}
                     >
                       {item.arbpl}
@@ -1699,36 +1813,43 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
             {/* Status Metrics Paper (Stat Cards at the top, full width, below Work Center selectors) */}
             <Paper
+              elevation={0}
               sx={{
-                p: { xs: 2.25, md: 3 },
-                borderRadius: 4,
-                bgcolor: 'background.paper',
-                border: '1px solid rgba(15, 23, 42, 0.04)',
-                boxShadow: '0 8px 30px rgba(15, 23, 42, 0.02)',
+                borderRadius: 0,
+                border: 0,
+                bgcolor: 'transparent',
+                boxShadow: 'none',
+                overflow: 'visible',
               }}
             >
-              <Stack spacing={2.5}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1.5 }}>
+              <Stack spacing={1.5}>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  sx={{
+                    justifyContent: 'space-between',
+                    alignItems: { xs: 'flex-start', sm: 'center' },
+                    gap: 1.5,
+                    px: 0.25,
+                  }}
+                >
                   <Box>
                     <Typography variant="subtitle1" sx={{ fontWeight: 900, color: 'text.primary' }}>
                       สถานะงานตามขอบเขตที่เลือก
                     </Typography>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                      {metricScopeLabel} หลังกรองข้อมูล
+                      {metricScopeLabel} ตามปี เดือน และ Order ที่เลือก
                     </Typography>
                   </Box>
                   <Chip
                     size="small"
-                    variant="outlined"
                     label={`แสดง ${formatNumber(scopedTotals.jobs)} / ${formatNumber(filteredTotals.jobs)} งานในแผน`}
                     sx={{
                       opacity: isWorkCenterPending ? 0.65 : 1,
                       transition: 'opacity 150ms ease-in-out',
                       borderRadius: '8px',
                       fontWeight: 800,
-                      color: 'primary.main',
-                      borderColor: 'primary.light',
-                      bgcolor: 'rgba(79, 70, 229, 0.04)',
+                      color: '#4338ca',
+                      bgcolor: '#eef2ff',
                     }}
                   />
                 </Stack>
@@ -1736,60 +1857,115 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                 <Box
                   sx={{
                     opacity: isWorkCenterPending ? 0.65 : 1,
+                    transform: isWorkCenterPending ? 'translateY(4px)' : 'translateY(0)',
                     pointerEvents: isWorkCenterPending ? 'none' : 'auto',
-                    transition: 'opacity 150ms ease-in-out',
+                    transition: 'opacity 240ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' },
-                    gap: 2,
+                    gridTemplateColumns: 'repeat(12, minmax(0, 1fr))',
+                    gap: { xs: 1, md: 1.25 },
+                    bgcolor: 'transparent',
                   }}
                 >
                   {[
-                    { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), icon: <TaskSquare size="20" color="#4f46e5" />, accent: '#4f46e5', bg: 'rgba(99, 102, 241, 0.03)', iconBg: 'rgba(99, 102, 241, 0.08)' },
-                    { label: 'STATUS', value: formatNumber(scopedTotals.waitJobs), icon: <Clock size="20" color="#d97706" />, accent: '#d97706', bg: 'rgba(217, 119, 6, 0.03)', iconBg: 'rgba(217, 119, 6, 0.08)' },
-                    { label: 'OP TIME', value: `${formatNumber(scopedTotals.optime)} ชม.`, icon: <StatusUp size="20" color="#0891b2" />, accent: '#0891b2', bg: 'rgba(8, 145, 178, 0.03)', iconBg: 'rgba(8, 145, 178, 0.08)' },
-                    { label: 'ORDER QTY', value: formatNumber(scopedTotals.quantity), icon: <Data size="20" color="#059669" />, accent: '#059669', bg: 'rgba(5, 150, 105, 0.03)', iconBg: 'rgba(5, 150, 105, 0.08)' },
-                    { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, icon: <Setting2 size="20" color="#dc2626" />, accent: '#dc2626', bg: 'rgba(220, 38, 38, 0.03)', iconBg: 'rgba(220, 38, 38, 0.08)' },
+                    { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), statuses: undefined, icon: <TaskSquare size="20" color="#4f46e5" />, accent: '#4f46e5', bg: 'rgba(99, 102, 241, 0.03)', iconBg: 'rgba(99, 102, 241, 0.08)' },
+                    { label: 'STATUS', value: '', statuses: statusBreakdown, icon: <Clock size="20" color="#d97706" />, accent: '#d97706', bg: 'rgba(217, 119, 6, 0.03)', iconBg: 'rgba(217, 119, 6, 0.08)' },
+                    { label: 'OP TIME', value: `${formatNumber(scopedTotals.optime)} ชม.`, statuses: undefined, icon: <StatusUp size="20" color="#0891b2" />, accent: '#0891b2', bg: 'rgba(8, 145, 178, 0.03)', iconBg: 'rgba(8, 145, 178, 0.08)' },
+                    { label: 'ORDER QTY', value: formatNumber(scopedTotals.quantity), statuses: undefined, icon: <Data size="20" color="#059669" />, accent: '#059669', bg: 'rgba(5, 150, 105, 0.03)', iconBg: 'rgba(5, 150, 105, 0.08)' },
+                    { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, statuses: undefined, icon: <Setting2 size="20" color="#dc2626" />, accent: '#dc2626', bg: 'rgba(220, 38, 38, 0.03)', iconBg: 'rgba(220, 38, 38, 0.08)' },
                   ].map((metric) => (
                     <Paper
                       key={metric.label}
-                      variant="outlined"
+                      elevation={0}
                       sx={{
-                        p: 2.25,
-                        borderRadius: 3.5, // rounded corners
-                        borderColor: 'rgba(15, 23, 42, 0.06)',
-                        bgcolor: metric.bg,
+                        position: 'relative',
+                        gridColumn: {
+                          xs: 'span 12',
+                          sm: metric.label === 'เปลี่ยน L/Q' ? 'span 12' : 'span 6',
+                          lg: metric.label === 'งานทั้งหมด' || metric.label === 'STATUS' ? 'span 3' : 'span 2',
+                        },
+                        minWidth: 0,
+                        minHeight: 158,
+                        p: { xs: 2, md: 2.25 },
+                        borderRadius: 3.5,
+                        border: 0,
+                        bgcolor: '#ffffff',
+                        background: `radial-gradient(circle at 100% 0%, ${metric.accent}18 0%, transparent 48%), #ffffff`,
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                         height: '100%',
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: `0 12px 24px -10px ${metric.accent}24`,
-                          borderColor: metric.accent,
+                        boxShadow: '0 4px 18px rgba(15, 23, 42, 0.035)',
+                        overflow: 'hidden',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 16,
+                          right: 16,
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          bgcolor: metric.accent,
+                          boxShadow: `0 0 0 5px ${metric.accent}12`,
                         },
                       }}
                     >
-                      <Stack spacing={1.5}>
-                        <Box
-                          sx={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: '12px',
-                            bgcolor: metric.iconBg,
-                            display: 'grid',
-                            placeItems: 'center',
-                          }}
-                        >
-                          {metric.icon}
-                        </Box>
-                        <Stack spacing={0.25}>
+                      <Stack spacing={1.3}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+                          <Box
+                            sx={{
+                              width: 34,
+                              height: 34,
+                              flexShrink: 0,
+                              borderRadius: 2,
+                              bgcolor: metric.iconBg,
+                              display: 'grid',
+                              placeItems: 'center',
+                            }}
+                          >
+                            {metric.icon}
+                          </Box>
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                             {metric.label}
                           </Typography>
-                          <Typography variant="h6" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                            {metric.value}
-                          </Typography>
+                        </Stack>
+                        <Stack spacing={0.35}>
+                          {metric.statuses ? (
+                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 0.55 }}>
+                              {metric.statuses.map(({ status, count }) => {
+                                const statusColor = getStatusColor(status);
+                                return (
+                                  <Box
+                                    key={status}
+                                    sx={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: 0.5,
+                                      minWidth: 0,
+                                      px: 0.75,
+                                      py: 0.45,
+                                      color: statusColor.color,
+                                      bgcolor: statusColor.bgcolor,
+                                      border: 0,
+                                      borderRadius: 1,
+                                      boxShadow: `inset 3px 0 0 ${statusColor.borderColor}`,
+                                    }}
+                                  >
+                                    <Typography noWrap sx={{ minWidth: 0, fontSize: '0.62rem', fontWeight: 900 }}>
+                                      {status}
+                                    </Typography>
+                                    <Typography sx={{ flexShrink: 0, fontSize: '0.76rem', fontWeight: 950 }}>
+                                      {formatNumber(count)}
+                                    </Typography>
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          ) : (
+                            <Typography variant="h4" sx={{ fontWeight: 950, color: '#0f172a', letterSpacing: '-0.045em', lineHeight: 1.05, fontSize: { xs: '1.65rem', lg: '1.8rem' } }}>
+                              {metric.value}
+                            </Typography>
+                          )}
                         </Stack>
                       </Stack>
                     </Paper>
@@ -1801,7 +1977,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: '320px 1fr' },
+                gridTemplateColumns: { xs: '1fr', lg: '360px minmax(0, 1fr)' },
                 gap: 3,
                 alignItems: 'start',
               }}
@@ -1894,26 +2070,78 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                       </FormControl>
                     </Stack>
 
-                    <FormControl size="small" fullWidth>
-                      <InputLabel id="status-filter-label">สถานะ (Status)</InputLabel>
-                      <Select
-                        labelId="status-filter-label"
-                        id="status-filter"
-                        value={selectedStatus}
-                        label="สถานะ (Status)"
-                        onChange={(e) => setSelectedStatus(e.target.value as string)}
-                        sx={{ borderRadius: '10px' }}
-                        MenuProps={{
-                          disableScrollLock: true,
-                        }}
+                    <Box
+                      role="group"
+                      aria-labelledby="status-filter-label"
+                      sx={{ p: 1.25, border: '1px solid #cbd5e1', borderRadius: '10px', bgcolor: '#ffffff' }}
+                    >
+                      <Typography id="status-filter-label" sx={{ mb: 0.75, color: '#475569', fontSize: '0.75rem', fontWeight: 850 }}>
+                        สถานะ (Status)
+                      </Typography>
+                      <Box
+                        component="label"
+                        sx={{ display: 'flex', alignItems: 'center', width: 'fit-content', mb: 0.65, color: '#334155', cursor: 'pointer' }}
                       >
-                        <MenuItem value="ALL">ทั้งหมด</MenuItem>
-                        <MenuItem value="null">NOT START</MenuItem>
-                        <MenuItem value="START">START</MenuItem>
-                        <MenuItem value="WAIT">WAIT</MenuItem>
-                        <MenuItem value="DONE">DONE</MenuItem>
-                      </Select>
-                    </FormControl>
+                        <Checkbox
+                          size="small"
+                          checked={selectedStatuses.length === STATUS_FILTER_OPTIONS.length}
+                          indeterminate={selectedStatuses.length > 0 && selectedStatuses.length < STATUS_FILTER_OPTIONS.length}
+                          onChange={(event) => {
+                            setSelectedStatuses(event.target.checked ? [...STATUS_FILTER_OPTIONS] : []);
+                          }}
+                          sx={{ p: 0.35, mr: 0.5 }}
+                        />
+                        <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>ทั้งหมด</Typography>
+                      </Box>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 0.65 }}>
+                        {STATUS_FILTER_OPTIONS.map((status) => {
+                          const checked = selectedStatuses.includes(status);
+                          const statusColor = getStatusColor(status);
+                          return (
+                            <Box
+                              key={status}
+                              component="label"
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                minWidth: 0,
+                                px: 0.5,
+                                py: 0.3,
+                                color: checked ? statusColor.color : '#64748b',
+                                bgcolor: checked ? statusColor.bgcolor : '#f8fafc',
+                                border: '1px solid',
+                                borderColor: checked ? statusColor.borderColor : '#e2e8f0',
+                                borderRadius: 1.25,
+                                cursor: 'pointer',
+                                transition: 'color 160ms ease, background-color 160ms ease, border-color 160ms ease',
+                              }}
+                            >
+                              <Checkbox
+                                size="small"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setSelectedStatuses((current) => {
+                                    const next = new Set(current);
+                                    if (event.target.checked) next.add(status);
+                                    else next.delete(status);
+                                    return STATUS_FILTER_OPTIONS.filter((option) => next.has(option));
+                                  });
+                                }}
+                                sx={{
+                                  p: 0.2,
+                                  mr: 0.35,
+                                  color: statusColor.borderColor,
+                                  '&.Mui-checked': { color: statusColor.borderColor },
+                                }}
+                              />
+                              <Typography noWrap sx={{ minWidth: 0, fontSize: '0.68rem', fontWeight: 900 }}>
+                                {status}
+                              </Typography>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
 
                     <Divider sx={{ my: 0.5 }} />
                     <Stack spacing={1.5}>
@@ -1925,14 +2153,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           selectedWorkCenter === defaultWorkCenter &&
                           normalizedSelectedYear === 'ALL' &&
                           normalizedSelectedMonth === 'ALL' &&
-                          selectedStatus === 'ALL' &&
+                          selectedStatuses.length === STATUS_FILTER_OPTIONS.length &&
                           orderSearch === ''
                         }
                         onClick={() => {
                           setSelectedWorkCenter(defaultWorkCenter);
                           setSelectedYear('ALL');
                           setSelectedMonth('ALL');
-                          setSelectedStatus('ALL');
+                          setSelectedStatuses([...STATUS_FILTER_OPTIONS]);
                           setOrderSearch('');
                         }}
                         sx={{
@@ -1975,44 +2203,87 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                     transition: 'opacity 150ms ease-in-out',
                   }}
                 >
-                  <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: 'text.primary' }}>
-                    โหลดงานตาม Work center
-                  </Typography>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                      โหลดงานตาม Work center
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 650 }}>
+                      เปรียบเทียบจำนวนงานและ Order Qty กับ Work Center ที่มีค่าสูงสุด
+                    </Typography>
+                  </Box>
                   <Stack spacing={2}>
                     {(() => {
                       const maxJobsCount = Math.max(
                         ...sortedWorkCenters.map((item) => (groupedJobs[item.arbpl] ?? []).length),
                         0
                       );
+                      const maxOrderQuantity = Math.max(
+                        ...sortedWorkCenters.map((item) =>
+                          (groupedJobs[item.arbpl] ?? []).reduce((sum, job) => sum + job.mgvrg, 0),
+                        ),
+                        0,
+                      );
 
                       return sortedWorkCenters.map((item) => {
                         const filteredGroup = groupedJobs[item.arbpl] ?? [];
                         const jobCount = filteredGroup.length;
-                        const percent = maxJobsCount > 0 ? (jobCount / maxJobsCount) * 100 : 0;
+                        const orderQuantity = filteredGroup.reduce((sum, job) => sum + job.mgvrg, 0);
+                        const jobPercent = maxJobsCount > 0 ? (jobCount / maxJobsCount) * 100 : 0;
+                        const orderQuantityPercent = maxOrderQuantity > 0 ? (orderQuantity / maxOrderQuantity) * 100 : 0;
 
                         return (
                           <Box key={item.arbpl}>
-                            <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.75, alignItems: 'center' }}>
-                              <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>
-                                เครื่องจักร {item.arbpl}
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
-                                {formatNumber(jobCount)} งาน ({percent.toFixed(0)}%)
-                              </Typography>
-                            </Stack>
-                            <LinearProgress
-                              variant="determinate"
-                              value={Math.min(percent, 100)}
-                              sx={{
-                                height: 10,
-                                borderRadius: 999,
-                                bgcolor: 'rgba(15, 23, 42, 0.05)',
-                                '& .MuiLinearProgress-bar': {
-                                  backgroundColor: 'primary.main',
-                                  borderRadius: 999,
-                                },
-                              }}
-                            />
+                            <Typography variant="body2" sx={{ mb: 0.8, fontWeight: 900, color: 'text.primary' }}>
+                              เครื่องจักร {item.arbpl}
+                            </Typography>
+                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: { xs: 1, sm: 1.5 } }}>
+                              <Box>
+                                <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center' }}>
+                                  <Typography variant="caption" sx={{ color: '#4f46e5', fontWeight: 850 }}>
+                                    จำนวนงาน
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
+                                    {formatNumber(jobCount)} งาน ({jobPercent.toFixed(0)}%)
+                                  </Typography>
+                                </Stack>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={Math.min(jobPercent, 100)}
+                                  sx={{
+                                    height: 9,
+                                    borderRadius: 999,
+                                    bgcolor: 'rgba(79, 70, 229, 0.08)',
+                                    '& .MuiLinearProgress-bar': {
+                                      backgroundColor: '#4f46e5',
+                                      borderRadius: 999,
+                                    },
+                                  }}
+                                />
+                              </Box>
+                              <Box>
+                                <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center' }}>
+                                  <Typography variant="caption" sx={{ color: '#0891b2', fontWeight: 850 }}>
+                                    ORDER QTY
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
+                                    {formatNumber(orderQuantity)} ({orderQuantityPercent.toFixed(0)}%)
+                                  </Typography>
+                                </Stack>
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={Math.min(orderQuantityPercent, 100)}
+                                  sx={{
+                                    height: 9,
+                                    borderRadius: 999,
+                                    bgcolor: 'rgba(8, 145, 178, 0.1)',
+                                    '& .MuiLinearProgress-bar': {
+                                      backgroundColor: '#0891b2',
+                                      borderRadius: 999,
+                                    },
+                                  }}
+                                />
+                              </Box>
+                            </Box>
                           </Box>
                         );
                       });
@@ -2095,11 +2366,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                     <PlanningActionButtons
                       isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
                       isSaving={savingAll || savingWorkCenter !== null}
-                      onAutoArrange={() => {
-                        prioritizeUrgentJobs(scopedJobs.map((job) => job.id));
-                      }}
                       onReset={() => {
-                        visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
+                        resetWorkCentersToInitial(visibleWorkCenters.map((item) => item.arbpl));
                       }}
                       onSave={() => {
                         if (deferredWorkCenter === 'ALL') {
@@ -2116,63 +2384,111 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
                 {/* Second Row: View Switcher */}
                 <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Box sx={{ display: 'flex', p: 0.5, bgcolor: '#f1f5f9', borderRadius: 2.5, gap: 0.5, border: '1px solid rgba(15, 23, 42, 0.03)' }}>
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      display: 'flex',
+                      width: { xs: '100%', sm: 500 },
+                      p: 0.5,
+                      bgcolor: '#e9edf3',
+                      borderRadius: 3,
+                      border: '1px solid rgba(15, 23, 42, 0.06)',
+                      boxShadow: 'inset 0 1px 3px rgba(15, 23, 42, 0.08)',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <Box
+                      aria-hidden
+                      sx={{
+                        position: 'absolute',
+                        top: 4,
+                        bottom: 4,
+                        left: 4,
+                        width: 'calc((100% - 8px) / 3)',
+                        borderRadius: 2.25,
+                        bgcolor:
+                          planningView === 'table' ? '#334155' :
+                            planningView === 'queue' ? '#4f46e5' : '#0891b2',
+                        boxShadow:
+                          planningView === 'table' ? '0 3px 10px rgba(51, 65, 85, 0.28)' :
+                            planningView === 'queue' ? '0 3px 10px rgba(79, 70, 229, 0.3)' :
+                              '0 3px 10px rgba(8, 145, 178, 0.3)',
+                        transform: `translateX(${planningView === 'table' ? 0 : planningView === 'queue' ? 100 : 200}%)`,
+                        transition: 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1), background-color 260ms ease, box-shadow 260ms ease',
+                        willChange: 'transform',
+                      }}
+                    />
                     <Button
                       size={'small'}
+                      disableRipple
+                      aria-pressed={planningView === 'table'}
                       onClick={() => setPlanningView('table')}
                       startIcon={<TaskSquare size="15" variant={planningView === 'table' ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
-                        px: 2.5,
-                        py: 0.75,
-                        borderRadius: 2,
-                        fontWeight: 700,
-                        fontSize: '0.84rem',
+                        zIndex: 1,
+                        flex: 1,
+                        minWidth: 0,
+                        px: { xs: 0.5, sm: 1.5 },
+                        py: 0.85,
+                        borderRadius: 2.25,
+                        fontWeight: 800,
+                        fontSize: { xs: '0.7rem', sm: '0.82rem' },
                         textTransform: 'none',
                         color: planningView === 'table' ? '#ffffff' : '#64748b',
-                        bgcolor: planningView === 'table' ? '#334155' : 'transparent',
-                        boxShadow: planningView === 'table' ? '0 4px 12px rgba(51, 65, 85, 0.18)' : 'none',
-                        transition: 'all 200ms ease',
-                        '&:hover': { bgcolor: planningView === 'table' ? '#1e293b' : 'rgba(15, 23, 42, 0.04)' },
+                        bgcolor: 'transparent',
+                        transition: 'color 220ms ease, transform 160ms ease',
+                        '&:hover': { bgcolor: 'transparent' },
+                        '&:active': { transform: 'scale(0.97)' },
                       }}
                     >
                       Detailed Table
                     </Button>
                     <Button
                       size={'small'}
+                      disableRipple
+                      aria-pressed={planningView === 'queue'}
                       onClick={() => setPlanningView('queue')}
                       startIcon={<Category size="15" variant={planningView === 'queue' ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
-                        px: 2.5,
-                        py: 0.75,
-                        borderRadius: 2,
-                        fontWeight: 700,
-                        fontSize: '0.84rem',
+                        zIndex: 1,
+                        flex: 1,
+                        minWidth: 0,
+                        px: { xs: 0.5, sm: 1.5 },
+                        py: 0.85,
+                        borderRadius: 2.25,
+                        fontWeight: 800,
+                        fontSize: { xs: '0.7rem', sm: '0.82rem' },
                         textTransform: 'none',
                         color: planningView === 'queue' ? '#ffffff' : '#64748b',
-                        bgcolor: planningView === 'queue' ? '#4f46e5' : 'transparent',
-                        boxShadow: planningView === 'queue' ? '0 4px 12px rgba(79, 70, 229, 0.2)' : 'none',
-                        transition: 'all 200ms ease',
-                        '&:hover': { bgcolor: planningView === 'queue' ? '#4338ca' : 'rgba(15, 23, 42, 0.04)' },
+                        bgcolor: 'transparent',
+                        transition: 'color 220ms ease, transform 160ms ease',
+                        '&:hover': { bgcolor: 'transparent' },
+                        '&:active': { transform: 'scale(0.97)' },
                       }}
                     >
                       Compact Queue
                     </Button>
                     <Button
                       size={'small'}
+                      disableRipple
+                      aria-pressed={planningView === 'matrix'}
                       onClick={() => setPlanningView('matrix')}
                       startIcon={<Data size="15" variant={planningView === 'matrix' ? 'Bold' : 'Outline'} color="currentColor" />}
                       sx={{
-                        px: 2.5,
-                        py: 0.75,
-                        borderRadius: 2,
-                        fontWeight: 700,
-                        fontSize: '0.84rem',
+                        zIndex: 1,
+                        flex: 1,
+                        minWidth: 0,
+                        px: { xs: 0.5, sm: 1.5 },
+                        py: 0.85,
+                        borderRadius: 2.25,
+                        fontWeight: 800,
+                        fontSize: { xs: '0.7rem', sm: '0.82rem' },
                         textTransform: 'none',
                         color: planningView === 'matrix' ? '#ffffff' : '#64748b',
-                        bgcolor: planningView === 'matrix' ? '#0891b2' : 'transparent',
-                        boxShadow: planningView === 'matrix' ? '0 4px 12px rgba(8, 145, 178, 0.2)' : 'none',
-                        transition: 'all 200ms ease',
-                        '&:hover': { bgcolor: planningView === 'matrix' ? '#0e7490' : 'rgba(15, 23, 42, 0.04)' },
+                        bgcolor: 'transparent',
+                        transition: 'color 220ms ease, transform 160ms ease',
+                        '&:hover': { bgcolor: 'transparent' },
+                        '&:active': { transform: 'scale(0.97)' },
                       }}
                     >
                       Routing Matrix
@@ -2256,8 +2572,9 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
             <Box
               sx={{
                 opacity: isWorkCenterPending || planningView !== deferredPlanningView ? 0.6 : 1,
+                transform: isWorkCenterPending || planningView !== deferredPlanningView ? 'translateY(4px)' : 'translateY(0)',
                 pointerEvents: isWorkCenterPending || planningView !== deferredPlanningView ? 'none' : 'auto',
-                transition: 'opacity 150ms ease-in-out',
+                transition: 'opacity 240ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             >
               {(isWorkCenterPending || planningView !== deferredPlanningView) && (
@@ -2287,6 +2604,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                 <RoutingMatrix
                   workCenters={visibleWorkCenters}
                   groupedJobs={groupedJobs}
+                  orderSequence={matrixOrderSequence}
                   externalRoutingJobs={externalRoutingJobs}
                   selectedJobIds={selectedJobIds}
                   lacquerColorMap={lacquerColorMap}
@@ -2313,6 +2631,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                         <WorkCenterCard
                           workCenter={workCenter}
                           group={group}
+                          routingOperationsByOrder={routingOperationsByOrder}
+                          externalRoutingJobIds={externalRoutingJobIds}
                           lacquerColorMap={lacquerColorMap}
                           collapsedGroups={collapsedGroups}
                           selectedJobIds={selectedJobIds}
@@ -2346,16 +2666,12 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         {hasDirtyChanges && showFloatingActionBar && (
           <PlanningActionBar
             isSaving={savingAll || savingWorkCenter !== null}
-            onAutoArrange={() => {
-              prioritizeUrgentJobs(scopedJobs.map((job) => job.id));
-            }}
             onReset={() => {
-              visibleWorkCenters.forEach((item) => resetWorkCenterToInitial(item.arbpl));
+              resetWorkCentersToInitial(visibleWorkCenters.map((item) => item.arbpl));
             }}
             onSave={saveAllDirty}
           />
         )}
-        <PlanningAiAssistant jobs={scopedJobs} scopeLabel={aiScopeLabel} />
       </Box>
       <NotificationSnackbar
         open={snackbar.open}

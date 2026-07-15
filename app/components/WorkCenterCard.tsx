@@ -45,6 +45,8 @@ function formatNumber(value: number) {
 interface WorkCenterCardProps {
   workCenter: string;
   group: PlanningJob[];
+  routingOperationsByOrder: Map<string, PlanningJob[]>;
+  externalRoutingJobIds: Set<number>;
   lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
   collapsedGroups: Record<string, boolean>;
   selectedJobIds: Set<number>;
@@ -62,9 +64,30 @@ interface WorkCenterCardProps {
   onMoveJobOneStep: (workCenter: string, jobId: number, direction: 'up' | 'down') => void;
 }
 
+function routingOperationsEqualForJobs(
+  previous: Map<string, PlanningJob[]>,
+  next: Map<string, PlanningJob[]>,
+  jobs: PlanningJob[],
+) {
+  const orders = new Set(jobs.map((job) => job.aufnr));
+  for (const order of orders) {
+    const previousOperations = previous.get(order) ?? [];
+    const nextOperations = next.get(order) ?? [];
+    if (
+      previousOperations.length !== nextOperations.length ||
+      previousOperations.some((operation, index) => operation !== nextOperations[index])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const WorkCenterCard = React.memo(({
   workCenter,
   group,
+  routingOperationsByOrder,
+  externalRoutingJobIds,
   lacquerColorMap,
   collapsedGroups,
   selectedJobIds,
@@ -261,6 +284,8 @@ const WorkCenterCard = React.memo(({
             <PlanningGroupTable
               groupJobs={groupJobs}
               group={group}
+              routingOperationsByOrder={routingOperationsByOrder}
+              externalRoutingJobIds={externalRoutingJobIds}
               groupLabel={groupDef.label}
               workCenter={workCenter}
               isCollapsed={isCollapsed}
@@ -309,7 +334,13 @@ const WorkCenterCard = React.memo(({
       );
     }) &&
     prevProps.group.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id)) &&
-    prevProps.group.every((job) => prevProps.sequenceChanges.get(job.id) === nextProps.sequenceChanges.get(job.id))
+    prevProps.group.every((job) => prevProps.sequenceChanges.get(job.id) === nextProps.sequenceChanges.get(job.id)) &&
+    routingOperationsEqualForJobs(
+      prevProps.routingOperationsByOrder,
+      nextProps.routingOperationsByOrder,
+      prevProps.group,
+    ) &&
+    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds
   );
 });
 
