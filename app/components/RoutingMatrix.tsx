@@ -269,7 +269,7 @@ const MatrixOperation = React.memo(function MatrixOperation({
         </Typography>
 
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
-          <Typography variant="caption" noWrap sx={{ minWidth: 0, color: '#475569', fontSize: '0.76rem', fontWeight: 800 }}>
+          <Typography suppressHydrationWarning variant="caption" noWrap sx={{ minWidth: 0, color: '#475569', fontSize: '0.76rem', fontWeight: 800 }}>
             Start {formatDate(job.stdate)} → Finish {formatDate(job.findate)}
           </Typography>
           {isFinishDateWithinWarningWindow(job.findate) && (

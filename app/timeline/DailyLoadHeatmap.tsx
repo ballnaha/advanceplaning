@@ -112,10 +112,10 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
         <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.25} sx={{ alignItems: { lg: 'center' }, justifyContent: 'space-between' }}>
           <Box>
             <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography sx={{ color: '#0f172a', fontWeight: 950 }}>Daily Load Heatmap</Typography>
-              <Chip size="small" label="RELATIVE LOAD" sx={{ height: 21, color: '#7c3aed', bgcolor: '#f3e8ff', fontSize: '0.6rem', fontWeight: 950 }} />
+              <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: '1.05rem' }}>Daily Load Heatmap</Typography>
+              <Chip size="small" label="RELATIVE LOAD" sx={{ height: 21, color: '#7c3aed', bgcolor: '#f3e8ff', fontSize: '0.68rem', fontWeight: 950 }} />
             </Stack>
-            <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.7rem' }}>
+            <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.78rem' }}>
               สีเทียบกับ Planned Load สูงสุดในช่วงที่เลือก ไม่ใช่ Capacity ของเครื่องจักร
             </Typography>
           </Box>
@@ -132,7 +132,7 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
               </Button>
             </Stack>
             <FormControl size="small" sx={{ minWidth: 132 }}>
-              <Select value={selectedStatus} onChange={(event) => { setSelectedStatus(event.target.value); setSelectedKey(null); }} sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 800 }}>
+              <Select MenuProps={{ disableScrollLock: true }} value={selectedStatus} onChange={(event) => { setSelectedStatus(event.target.value); setSelectedKey(null); }} sx={{ borderRadius: 1.5, fontSize: '0.82rem', fontWeight: 800 }}>
                 {['ALL', 'NOT START', 'START', 'WAIT', 'DONE'].map((status) => <MenuItem key={status} value={status}>{status === 'ALL' ? 'ทุก Status' : status}</MenuItem>)}
               </Select>
             </FormControl>
@@ -151,11 +151,11 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
           <Box sx={{ minWidth: LABEL_WIDTH + DAY_COUNT * CELL_WIDTH }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: `${LABEL_WIDTH}px repeat(${DAY_COUNT}, ${CELL_WIDTH}px)`, bgcolor: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
               <Box sx={{ position: 'sticky', left: 0, zIndex: 4, p: 1.15, bgcolor: '#f8fafc', borderRight: '1px solid #cbd5e1' }}>
-                <Typography sx={{ color: '#475569', fontSize: '0.68rem', fontWeight: 950 }}>PLANNED LOAD</Typography>
+                <Typography sx={{ color: '#475569', fontSize: '0.76rem', fontWeight: 950 }}>PLANNED LOAD</Typography>
               </Box>
               {days.map((day) => (
                 <Box key={day} sx={{ p: 1, textAlign: 'center', bgcolor: day === initialDate ? '#eff6ff' : '#f8fafc', borderRight: '1px solid #e2e8f0', boxShadow: day === initialDate ? 'inset 0 -3px 0 #3b82f6' : 'none' }}>
-                  <Typography sx={{ color: day === initialDate ? '#1d4ed8' : '#475569', fontSize: '0.69rem', fontWeight: 950 }}>{dayFormatter.format(parseIsoDate(day))}</Typography>
+                  <Typography suppressHydrationWarning sx={{ color: day === initialDate ? '#1d4ed8' : '#475569', fontSize: '0.77rem', fontWeight: 950 }}>{dayFormatter.format(parseIsoDate(day))}</Typography>
                 </Box>
               ))}
             </Box>
@@ -166,8 +166,8 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
               return (
                 <Box key={workCenter} sx={{ display: 'grid', gridTemplateColumns: `${LABEL_WIDTH}px repeat(${DAY_COUNT}, ${CELL_WIDTH}px)`, borderBottom: '1px solid #e2e8f0' }}>
                   <Box sx={{ position: 'sticky', left: 0, zIndex: 3, p: 1.2, minHeight: 92, bgcolor: '#ffffff', borderRight: '1px solid #cbd5e1' }}>
-                    <Typography sx={{ color: '#0f172a', fontSize: '0.8rem', fontWeight: 950 }}>WC {workCenter}</Typography>
-                    <Typography sx={{ mt: 0.25, color: '#0f766e', fontSize: '0.63rem', fontWeight: 850 }}>{numberFormatter.format(workCenterHours)} ชม.</Typography>
+                    <Typography sx={{ color: '#0f172a', fontSize: '0.88rem', fontWeight: 950 }}>WC {workCenter}</Typography>
+                    <Typography sx={{ mt: 0.25, color: '#0f766e', fontSize: '0.71rem', fontWeight: 850 }}>{numberFormatter.format(workCenterHours)} ชม.</Typography>
                   </Box>
                   {days.map((day) => {
                     const key = `${workCenter}|${day}`;
@@ -193,9 +193,9 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
                           '&.Mui-disabled': { opacity: 1, color: style.color },
                         }}
                       >
-                        <Typography sx={{ fontSize: '0.78rem', lineHeight: 1.1, fontWeight: 950 }}>{cell ? `${numberFormatter.format(cell.hours)} ชม.` : '—'}</Typography>
-                        <Typography sx={{ mt: 0.35, fontSize: '0.59rem', fontWeight: 850 }}>{cell ? `${cell.operations.length} OP · ${style.label}` : 'ไม่มีงาน'}</Typography>
-                        {cell && cell.missingTime > 0 && <Typography sx={{ mt: 0.2, fontSize: '0.55rem', fontWeight: 900 }}>! ไม่มีเวลา {cell.missingTime} OP</Typography>}
+                        <Typography sx={{ fontSize: '0.86rem', lineHeight: 1.1, fontWeight: 950 }}>{cell ? `${numberFormatter.format(cell.hours)} ชม.` : '—'}</Typography>
+                        <Typography sx={{ mt: 0.35, fontSize: '0.66rem', fontWeight: 850 }}>{cell ? `${cell.operations.length} OP · ${style.label}` : 'ไม่มีงาน'}</Typography>
+                        {cell && cell.missingTime > 0 && <Typography sx={{ mt: 0.2, fontSize: '0.62rem', fontWeight: 900 }}>! ไม่มีเวลา {cell.missingTime} OP</Typography>}
                       </ButtonBase>
                     );
                   })}
@@ -209,8 +209,8 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
           {selectedCell ? (
             <Stack spacing={1.25}>
               <Box>
-                <Typography sx={{ color: '#0f172a', fontWeight: 950 }}>WC {selectedCell.workCenter}</Typography>
-                <Typography sx={{ color: '#64748b', fontSize: '0.7rem' }}>{detailDateFormatter.format(parseIsoDate(selectedCell.date))}</Typography>
+                <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: '1rem' }}>WC {selectedCell.workCenter}</Typography>
+                <Typography suppressHydrationWarning sx={{ color: '#64748b', fontSize: '0.78rem' }}>{detailDateFormatter.format(parseIsoDate(selectedCell.date))}</Typography>
               </Box>
               <Stack direction="row" spacing={0.6} sx={{ flexWrap: 'wrap', gap: 0.6 }}>
                 <Chip size="small" label={`${numberFormatter.format(selectedCell.hours)} ชั่วโมง`} sx={{ color: '#0f766e', bgcolor: '#ccfbf1', fontWeight: 900 }} />
@@ -220,19 +220,19 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
                 {selectedCell.operations.slice(0, 8).map((operation) => (
                   <Box key={operation.id} sx={{ p: 0.85, borderRadius: 1.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff', boxShadow: `inset 3px 0 0 ${statusColor(operation.status)}` }}>
                     <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
-                      <Typography noWrap sx={{ minWidth: 0, color: '#334155', fontSize: '0.67rem', fontWeight: 950 }}>{operation.order} · OP {operation.operation || '-'}</Typography>
-                      <Typography sx={{ flexShrink: 0, color: operation.opTime > 0 ? '#0f766e' : '#b45309', fontSize: '0.62rem', fontWeight: 900 }}>{operation.opTime > 0 ? `${numberFormatter.format(operation.opTime)} ชม.` : 'ไม่มีเวลา'}</Typography>
+                      <Typography noWrap sx={{ minWidth: 0, color: '#334155', fontSize: '0.74rem', fontWeight: 950 }}>{operation.order} · OP {operation.operation || '-'}</Typography>
+                      <Typography sx={{ flexShrink: 0, color: operation.opTime > 0 ? '#0f766e' : '#b45309', fontSize: '0.69rem', fontWeight: 900 }}>{operation.opTime > 0 ? `${numberFormatter.format(operation.opTime)} ชม.` : 'ไม่มีเวลา'}</Typography>
                     </Stack>
-                    <Typography noWrap sx={{ mt: 0.15, color: '#64748b', fontSize: '0.59rem' }}>{operation.status} · Qty {numberFormatter.format(operation.quantity)}</Typography>
+                    <Typography noWrap sx={{ mt: 0.15, color: '#64748b', fontSize: '0.66rem' }}>{operation.status} · Qty {numberFormatter.format(operation.quantity)}</Typography>
                   </Box>
                 ))}
-                {selectedCell.operations.length > 8 && <Typography sx={{ color: '#64748b', fontSize: '0.63rem', fontWeight: 850 }}>+{selectedCell.operations.length - 8} Operations</Typography>}
+                {selectedCell.operations.length > 8 && <Typography sx={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 850 }}>+{selectedCell.operations.length - 8} Operations</Typography>}
               </Stack>
             </Stack>
           ) : (
             <Stack direction="row" spacing={0.8} sx={{ alignItems: 'flex-start' }}>
               <InfoCircle size="18" color="#64748b" />
-              <Typography sx={{ color: '#64748b', fontSize: '0.7rem' }}>ช่วงนี้ไม่มี Planned Load ตาม Filter ที่เลือก</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: '0.78rem' }}>ช่วงนี้ไม่มี Planned Load ตาม Filter ที่เลือก</Typography>
             </Stack>
           )}
         </Box>
@@ -247,7 +247,7 @@ export default function DailyLoadHeatmap({ initialDate, operations, workCenters 
         ].map(([bg, color, label]) => (
           <Stack key={label} direction="row" spacing={0.45} sx={{ alignItems: 'center' }}>
             <Box sx={{ width: 10, height: 10, borderRadius: 0.6, bgcolor: bg, border: `1px solid ${color}` }} />
-            <Typography sx={{ color: '#64748b', fontSize: '0.59rem', fontWeight: 800 }}>{label}</Typography>
+            <Typography sx={{ color: '#64748b', fontSize: '0.67rem', fontWeight: 800 }}>{label}</Typography>
           </Stack>
         ))}
       </Stack>

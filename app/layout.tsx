@@ -3,6 +3,7 @@ import { Sarabun } from "next/font/google";
 import "./globals.css";
 import MuiProvider from "./MuiProvider";
 import ApplicationHeader from "./components/ApplicationHeader";
+import MainContent from "./components/MainContent";
 
 const sarabun = Sarabun({
   weight: ['100', '200', '300', '400', '500', '600', '700', '800'],
@@ -33,7 +34,7 @@ export default function RootLayout({
       >
         <MuiProvider>
           <ApplicationHeader />
-          <main style={{ flex: '1 0 auto' }}>{children}</main>
+          <MainContent>{children}</MainContent>
           <footer
             style={{
               flexShrink: 0,

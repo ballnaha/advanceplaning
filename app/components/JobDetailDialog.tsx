@@ -27,6 +27,21 @@ type LacquerColor = {
   border: string;
 };
 
+function getStatusStyle(status: string) {
+  switch (status) {
+    case 'DONE':
+      return { color: '#166534', bg: '#dcfce7', border: '#22c55e' };
+    case 'START':
+      return { color: '#1d4ed8', bg: '#dbeafe', border: '#3b82f6' };
+    case 'WAIT':
+      return { color: '#854d0e', bg: '#fef9c3', border: '#eab308' };
+    case 'NOT START':
+      return { color: '#475569', bg: '#f1f5f9', border: '#94a3b8' };
+    default:
+      return { color: '#6d28d9', bg: '#ede9fe', border: '#ddd6fe' };
+  }
+}
+
 type DetailField = {
   key: keyof PlanningJob;
   label: string;
@@ -336,14 +351,24 @@ export default function JobDetailDialog({
               <Typography component="h2" variant="h6" sx={{ fontWeight: 900, fontSize: '1.25rem' }}>
                 Order #{job?.aufnr ?? ''}
               </Typography>
-              {job?.text1 && (
-                <Chip
-                  size="small"
-                  color={job.text1.toUpperCase() === 'WAIT' ? 'warning' : 'default'}
-                  label={job.text1}
-                  sx={{ height: 22, borderRadius: 1, fontWeight: 850 }}
-                />
-              )}
+              {(() => {
+                const status = job?.text1?.trim().toUpperCase() || 'NOT START';
+                const style = getStatusStyle(status);
+                return (
+                  <Chip
+                    size="small"
+                    label={status}
+                    sx={{
+                      height: 22,
+                      borderRadius: 1,
+                      fontWeight: 850,
+                      color: style.color,
+                      bgcolor: style.bg,
+                      border: `1px solid ${style.border}`,
+                    }}
+                  />
+                );
+              })()}
             </Stack>
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 650, fontSize: '0.92rem' }}>
               {job?.zptkx || job?.ltxa1 || 'รายละเอียดคำสั่งซื้อ'}

@@ -1,7 +1,9 @@
+import { Suspense } from 'react';
 import TimelineReadiness from './TimelineReadiness';
 import type { TimelineOperation } from './DayTimeline';
 import { getBangkokDateKey } from './date-utils';
 import { getPlanningDashboardData } from '@/lib/planning';
+import { TimelineSkeleton } from '@/app/components/Skeletons';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +13,15 @@ function percentage(part: number, total: number) {
   return total > 0 ? Number(((part / total) * 100).toFixed(1)) : 0;
 }
 
-export default async function TimelinePage() {
+export default function TimelinePage() {
+  return (
+    <Suspense fallback={<TimelineSkeleton />}>
+      <TimelineContainer />
+    </Suspense>
+  );
+}
+
+async function TimelineContainer() {
   const data = await getPlanningDashboardData();
   const jobs = data.jobs.filter((job) => TARGET_WORK_CENTERS.includes(job.arbpl as typeof TARGET_WORK_CENTERS[number]));
   const currentYear = Number(new Intl.DateTimeFormat('en-US', {
@@ -60,6 +70,7 @@ export default async function TimelinePage() {
     quantity: job.mgvrg,
     status: job.text1?.trim().toUpperCase() || 'NOT START',
     sequence: job.seqno,
+    rawJob: job,
   }));
 
   return (
