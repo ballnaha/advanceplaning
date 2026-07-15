@@ -15,6 +15,9 @@ const sarabun = Sarabun({
 export const metadata: Metadata = {
   title: "PSC Planing",
   description: "Factory planning dashboard",
+  other: {
+    google: 'notranslate',
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +28,7 @@ export default function RootLayout({
   return (
     <html
       lang="th"
-      className={sarabun.variable}
+      className={`${sarabun.variable} notranslate`}
       style={{ height: '100%', width: '100%' }}
     >
       <body

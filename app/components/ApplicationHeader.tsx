@@ -2,14 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Box, Button, Container, Stack, Typography } from '@mui/material';
+import { Box, Button, Container, Stack, Typography, IconButton, Tooltip } from '@mui/material';
 import { Book1, Calendar, Category, ChartSquare, Data, Login } from 'iconsax-react';
 import { useNavigation } from '../NavigationContext';
 
 const navigation = [
   { label: 'แดชบอร์ดหลัก', title: 'Planning Dashboard', href: '/', icon: Category },
   { label: 'ไทม์ไลน์เครื่องจักร', title: 'Resource Timeline', href: '/timeline', icon: Calendar },
-  { label: 'นำเข้าแผนผลิต', title: 'นำเข้าข้อมูล Excel', href: '/upload', icon: Data },
   { label: 'คู่มือการใช้งาน', title: 'คู่มือการใช้งาน', href: '/guide', icon: Book1 },
 ] as const;
 
@@ -21,7 +20,7 @@ export default function ApplicationHeader() {
   const pathname = usePathname();
   const { isNavigating, activePath, startNavigation } = useNavigation();
 
-  const currentPage = navigation.find((item) => isActivePath(activePath, item.href));
+  const isUploadActive = isActivePath(activePath, '/upload');
 
   return (
     <Box
@@ -105,7 +104,8 @@ export default function ApplicationHeader() {
           {/* Navigation Section */}
           {(() => {
             const activeIndex = navigation.findIndex((item) => isActivePath(activePath, item.href));
-            const safeActiveIndex = activeIndex === -1 ? 0 : activeIndex;
+            const hasActive = activeIndex !== -1;
+            const itemWidthPercent = 100 / navigation.length;
 
             return (
               <Stack
@@ -115,7 +115,7 @@ export default function ApplicationHeader() {
                 spacing={0}
                 sx={{
                   position: 'relative',
-                  minWidth: { xs: 340, sm: 460, md: 540 },
+                  minWidth: { xs: 260, sm: 360, md: 420 },
                   p: 0.5,
                   borderRadius: '9999px',
                   bgcolor: 'rgba(15, 23, 42, 0.038)',
@@ -125,23 +125,25 @@ export default function ApplicationHeader() {
                 }}
               >
                 {/* iOS Sliding Capsule */}
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: 4,
-                    bottom: 4,
-                    left: `calc(4px + ${safeActiveIndex} * 25%)`,
-                    width: 'calc(25% - 8px)',
-                    borderRadius: '9999px',
-                    bgcolor: '#ffffff',
-                    boxShadow: '0 3px 8px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.03)',
-                    transition: 'left 320ms cubic-bezier(0.16, 1, 0.3, 1)',
-                    zIndex: 1,
-                  }}
-                />
+                {hasActive && (
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: 4,
+                      bottom: 4,
+                      left: `calc(4px + ${activeIndex} * ${itemWidthPercent}%)`,
+                      width: `calc(${itemWidthPercent}% - 8px)`,
+                      borderRadius: '9999px',
+                      bgcolor: '#ffffff',
+                      boxShadow: '0 3px 8px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.03)',
+                      transition: 'left 320ms cubic-bezier(0.16, 1, 0.3, 1)',
+                      zIndex: 1,
+                    }}
+                  />
+                )}
 
                 {navigation.map((item, idx) => {
-                  const active = idx === safeActiveIndex;
+                  const active = activeIndex === idx;
                   const Icon = item.icon;
                   return (
                     <Box
@@ -185,7 +187,33 @@ export default function ApplicationHeader() {
           })()}
 
           {/* Right Side Action */}
-          <Stack direction="row" spacing={2} sx={{ flexShrink: 0, alignItems: 'center' }}>
+          <Stack direction="row" spacing={1.5} sx={{ flexShrink: 0, alignItems: 'center' }}>
+            <Tooltip title="นำเข้าแผนผลิต" arrow>
+              <IconButton
+                component={Link}
+                href="/upload"
+                onClick={() => startNavigation('/upload')}
+                sx={{
+                  color: isUploadActive ? '#4f46e5' : '#64748b',
+                  bgcolor: isUploadActive ? 'rgba(79, 70, 229, 0.08)' : 'rgba(15, 23, 42, 0.02)',
+                  border: '1px solid',
+                  borderColor: isUploadActive ? 'rgba(79, 70, 229, 0.2)' : 'rgba(15, 23, 42, 0.06)',
+                  p: 1.1,
+                  borderRadius: '9999px',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    color: '#4f46e5',
+                    bgcolor: 'rgba(79, 70, 229, 0.08)',
+                    borderColor: 'rgba(79, 70, 229, 0.25)',
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 4px 12px rgba(79, 70, 229, 0.08)',
+                  },
+                }}
+              >
+                <Data size="18" variant={isUploadActive ? 'Bold' : 'Linear'} color="currentColor" />
+              </IconButton>
+            </Tooltip>
+
             <Button
               variant="outlined"
               size="small"
