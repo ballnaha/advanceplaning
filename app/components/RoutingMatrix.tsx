@@ -555,7 +555,7 @@ function RoutingMatrix({
                       >
                         <Stack direction="row" sx={{ mb: 0.6, alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                           <Typography variant="caption" sx={{ color: '#475569', fontSize: '0.7rem', fontWeight: 950 }}>
-                            นอกเหนือ WC 111001 - 05 ({externalOperations.length})
+                            นอกเหนือ WC 111001 - 05
                           </Typography>
                         </Stack>
                         <Stack spacing={0.45}>

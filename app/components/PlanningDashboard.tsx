@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import NotificationSnackbar from './NotificationSnackbar';
 import WorkCenterCard from './WorkCenterCard';
 import RoutingBoard from './RoutingBoard';
@@ -34,7 +33,6 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import {
-  Book,
   Category,
   Clock,
   Data,
@@ -65,6 +63,13 @@ function formatNumber(value: number) {
   return numberFormatter.format(value);
 }
 
+function formatHoursAndMinutes(hours: number) {
+  const totalMinutes = Math.max(0, Math.round(hours * 60));
+  const wholeHours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  return `${formatNumber(wholeHours)} ชั่วโมง ${formatNumber(remainingMinutes)} นาที`;
+}
+
 function getStatusLabel(value: string | null) {
   return value?.trim().toUpperCase() || 'NOT START';
 }
@@ -72,9 +77,9 @@ function getStatusLabel(value: string | null) {
 function getStatusColor(status: string) {
   switch (status) {
     case 'START':
-      return { color: '#854d0e', bgcolor: '#fef9c3', borderColor: '#eab308' };
+      return { color: '#1d4ed8', bgcolor: '#dbeafe', borderColor: '#3b82f6' };
     case 'WAIT':
-      return { color: '#b91c1c', bgcolor: '#fee2e2', borderColor: '#ef4444' };
+      return { color: '#854d0e', bgcolor: '#fef9c3', borderColor: '#eab308' };
     case 'DONE':
       return { color: '#166534', bgcolor: '#dcfce7', borderColor: '#22c55e' };
     case 'NOT START':
@@ -1591,92 +1596,6 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           sx={{ px: { xs: 1.5, sm: 2, lg: 3, xl: 4 } }}
         >
           <Stack spacing={3}>
-            <Paper
-              sx={{
-                p: { xs: 2, md: 3 },
-                borderRadius: 4,
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.65) 100%)',
-                backdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
-                boxShadow: '0 10px 40px -10px rgba(15, 23, 42, 0.05)',
-              }}
-            >
-              <Stack
-                direction={{ xs: 'column', lg: 'row' }}
-                spacing={2}
-                sx={{ alignItems: { xs: 'flex-start', lg: 'center' }, justifyContent: 'space-between' }}
-              >
-                <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-                  <Box
-                    sx={{
-                      width: 46,
-                      height: 46,
-                      borderRadius: '14px',
-                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.3)',
-                    }}
-                  >
-                    <Category size="22" color="#ffffff" variant="Bold" />
-                  </Box>
-                  <Box>
-                    <Typography
-                      variant="h5"
-                      sx={{
-                        fontWeight: 950,
-                        letterSpacing: '-0.03em',
-                        background: 'linear-gradient(45deg, #4f46e5 30%, #06b6d4 90%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                      }}
-                    >
-                      PSC Planing
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, mt: 0.25, display: 'block' }}>
-                      ระบบจัดตารางแผนการผลิตและลำดับคิวเครื่องจักร
-                    </Typography>
-                  </Box>
-                </Stack>
-
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ width: { xs: '100%', lg: 'auto' } }}>
-                  <Button
-                    component={Link}
-                    href="/guide"
-                    size="small"
-                    variant="outlined"
-                    startIcon={<Book size="16" color="#4f46e5" />}
-                    sx={{
-                      borderRadius: '12px',
-                      fontWeight: 800,
-                      px: 2.25,
-                      py: 1,
-                      textTransform: 'none',
-                    }}
-                  >
-                    คู่มือการใช้งาน
-                  </Button>
-                  <Button
-                    component={Link}
-                    href="/upload"
-                    size="small"
-                    variant="contained"
-                    startIcon={<Data size="16" color="#ffffff" />}
-                    sx={{
-                      borderRadius: '12px',
-                      fontWeight: 800,
-                      px: 2.5,
-                      py: 1,
-                      textTransform: 'none',
-                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.25)',
-                    }}
-                  >
-                    Upload Excel
-                  </Button>
-                </Stack>
-              </Stack>
-            </Paper>
-
             {/* Work Center Card Selector Row (Full Width, absolute top below header) */}
             <Stack
               direction={{ xs: 'column', md: 'row' }}
@@ -1867,11 +1786,11 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   }}
                 >
                   {[
-                    { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), statuses: undefined, icon: <TaskSquare size="20" color="#4f46e5" />, accent: '#4f46e5', bg: 'rgba(99, 102, 241, 0.03)', iconBg: 'rgba(99, 102, 241, 0.08)' },
-                    { label: 'STATUS', value: '', statuses: statusBreakdown, icon: <Clock size="20" color="#d97706" />, accent: '#d97706', bg: 'rgba(217, 119, 6, 0.03)', iconBg: 'rgba(217, 119, 6, 0.08)' },
-                    { label: 'OP TIME', value: `${formatNumber(scopedTotals.optime)} ชม.`, statuses: undefined, icon: <StatusUp size="20" color="#0891b2" />, accent: '#0891b2', bg: 'rgba(8, 145, 178, 0.03)', iconBg: 'rgba(8, 145, 178, 0.08)' },
-                    { label: 'ORDER QTY', value: formatNumber(scopedTotals.quantity), statuses: undefined, icon: <Data size="20" color="#059669" />, accent: '#059669', bg: 'rgba(5, 150, 105, 0.03)', iconBg: 'rgba(5, 150, 105, 0.08)' },
-                    { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, statuses: undefined, icon: <Setting2 size="20" color="#dc2626" />, accent: '#dc2626', bg: 'rgba(220, 38, 38, 0.03)', iconBg: 'rgba(220, 38, 38, 0.08)' },
+                    { label: 'งานทั้งหมด', value: formatNumber(scopedTotals.jobs), detail: undefined, statuses: undefined, icon: <TaskSquare size="20" color="#4f46e5" />, accent: '#4f46e5', bg: 'rgba(99, 102, 241, 0.03)', iconBg: 'rgba(99, 102, 241, 0.08)' },
+                    { label: 'STATUS', value: '', detail: undefined, statuses: statusBreakdown, icon: <Clock size="20" color="#d97706" />, accent: '#d97706', bg: 'rgba(217, 119, 6, 0.03)', iconBg: 'rgba(217, 119, 6, 0.08)' },
+                    { label: 'OP TIME', value: `${formatNumber(scopedTotals.optime)} ชม.`, detail: formatHoursAndMinutes(scopedTotals.optime), statuses: undefined, icon: <StatusUp size="20" color="#0891b2" />, accent: '#0891b2', bg: 'rgba(8, 145, 178, 0.03)', iconBg: 'rgba(8, 145, 178, 0.08)' },
+                    { label: 'ORDER QTY', value: formatNumber(scopedTotals.quantity), detail: undefined, statuses: undefined, icon: <Data size="20" color="#059669" />, accent: '#059669', bg: 'rgba(5, 150, 105, 0.03)', iconBg: 'rgba(5, 150, 105, 0.08)' },
+                    { label: 'เปลี่ยน L/Q', value: `${formatNumber(totalChangeovers)} ครั้ง`, detail: undefined, statuses: undefined, icon: <Setting2 size="20" color="#dc2626" />, accent: '#dc2626', bg: 'rgba(220, 38, 38, 0.03)', iconBg: 'rgba(220, 38, 38, 0.08)' },
                   ].map((metric) => (
                     <Paper
                       key={metric.label}
@@ -1962,9 +1881,16 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                               })}
                             </Box>
                           ) : (
-                            <Typography variant="h4" sx={{ fontWeight: 950, color: '#0f172a', letterSpacing: '-0.045em', lineHeight: 1.05, fontSize: { xs: '1.65rem', lg: '1.8rem' } }}>
-                              {metric.value}
-                            </Typography>
+                            <Box>
+                              <Typography variant="h4" sx={{ fontWeight: 950, color: '#0f172a', letterSpacing: '-0.045em', lineHeight: 1.05, fontSize: { xs: '1.65rem', lg: '1.8rem' } }}>
+                                {metric.value}
+                              </Typography>
+                              {metric.detail && (
+                                <Typography sx={{ mt: 0.45, color: '#64748b', fontSize: '0.7rem', fontWeight: 750, lineHeight: 1.3 }}>
+                                  {metric.detail}
+                                </Typography>
+                              )}
+                            </Box>
                           )}
                         </Stack>
                       </Stack>

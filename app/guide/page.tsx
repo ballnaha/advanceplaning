@@ -1,10 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import {
   Box,
-  Button,
   Card,
   CardContent,
   Chip,
@@ -15,8 +13,6 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  ArrowLeft,
-  Book,
   Data,
   InfoCircle,
   TaskSquare,
@@ -27,53 +23,6 @@ export default function GuidePage() {
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: 4 }}>
       <Container maxWidth="lg">
         <Stack spacing={3.5}>
-          {/* Header Card */}
-          <Paper sx={{ p: { xs: 2.5, md: 3.5 }, borderRadius: 2 }}>
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={2.5}
-              sx={{ alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-                <Box
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 2,
-                    bgcolor: 'primary.main',
-                    display: 'grid',
-                    placeItems: 'center',
-                    boxShadow: '0 8px 20px rgba(79, 70, 229, 0.25)',
-                  }}
-                >
-                  <Book size="24" color="#ffffff" variant="Bold" />
-                </Box>
-                <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                    คู่มือการใช้งานระบบ (User Manual)
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.25 }}>
-                    คู่มืออธิบายฟังก์ชันการทำงาน และอัลกอริทึมการจัดเรียงคิวอัตโนมัติของ PSC Planing
-                  </Typography>
-                </Box>
-              </Stack>
-              <Button
-                component={Link}
-                href="/"
-                variant="outlined"
-                startIcon={<ArrowLeft size="18" color="currentColor" />}
-                sx={{
-                  borderRadius: 1.5,
-                  fontWeight: 750,
-                  px: 2.5,
-                  py: 1,
-                }}
-              >
-                กลับไปแดชบอร์ดจัดคิว
-              </Button>
-            </Stack>
-          </Paper>
-
           {/* Section 1: วิธีการใช้งาน Dashboard */}
           <Typography variant="h6" sx={{ fontWeight: 850, pl: 1, color: 'text.primary' }}>
             🖥️ 1. คู่มือการใช้งานแดชบอร์ดจัดคิว

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Sarabun } from "next/font/google";
 import "./globals.css";
 import MuiProvider from "./MuiProvider";
+import ApplicationHeader from "./components/ApplicationHeader";
 
 const sarabun = Sarabun({
   weight: ['100', '200', '300', '400', '500', '600', '700', '800'],
@@ -31,6 +32,7 @@ export default function RootLayout({
         style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', margin: 0 }}
       >
         <MuiProvider>
+          <ApplicationHeader />
           <main style={{ flex: '1 0 auto' }}>{children}</main>
           <footer
             style={{

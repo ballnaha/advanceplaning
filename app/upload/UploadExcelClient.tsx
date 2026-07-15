@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import {
   Alert,
   Box,
@@ -13,7 +12,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { Data, Refresh, TaskSquare } from 'iconsax-react';
+import { Refresh } from 'iconsax-react';
 import * as XLSX from 'xlsx';
 import { requiredExcelHeaders } from '@/lib/excel-headers';
 
@@ -142,37 +141,6 @@ export default function UploadExcelClient() {
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: 4 }}>
       <Container maxWidth="xl">
         <Stack spacing={3}>
-          <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ justifyContent: 'space-between' }}>
-              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                <Box
-                  sx={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 1.5,
-                    bgcolor: 'primary.main',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <Data size="22" color="#ffffff" variant="Bold" />
-                </Box>
-                <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 850 }}>
-                    Upload Excel
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    อ่านไฟล์แล้วส่งเข้า MySQL เป็น chunk ผ่าน Prisma
-                  </Typography>
-                </Box>
-              </Stack>
-
-              <Button component={Link} href="/" variant="outlined" startIcon={<TaskSquare size="18" color="#4f46e5" />}>
-                Dashboard
-              </Button>
-            </Stack>
-          </Paper>
-
           <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
             <Stack spacing={2.5}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' } }}>
