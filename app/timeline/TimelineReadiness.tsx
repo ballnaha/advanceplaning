@@ -8,7 +8,7 @@ import {
   Typography,
 } from '@mui/material';
 import { Data } from 'iconsax-react';
-import DayTimeline, { type TimelineOperation } from './DayTimeline';
+import GanttSchedulerClient from './GanttSchedulerClient';
 
 type Summary = {
   operations: number;
@@ -34,7 +34,7 @@ type WorkCenterReadiness = {
 type Props = {
   generatedAt: string;
   initialDate: string;
-  operations: TimelineOperation[];
+  operations: any[];
   summary: Summary;
   workCenters: WorkCenterReadiness[];
 };
@@ -58,12 +58,11 @@ export default function TimelineReadiness({ generatedAt, initialDate, operations
       >
         <Stack spacing={2.25}>
 
-
-
-          <DayTimeline
+          <GanttSchedulerClient
             initialDate={initialDate}
-            operations={operations}
+            jobs={operations.map((op) => op.rawJob).filter(Boolean)}
             workCenters={workCenters.map((item) => item.workCenter)}
+            generatedAt={generatedAt}
           />
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.75} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between', px: 0.5 }}>

@@ -7,6 +7,7 @@ type PlanningActionBarProps = {
   isSaving: boolean;
   onReset: () => void;
   onSave: () => void;
+  resetLabel?: string;
 };
 
 const ResetIcon = () => (
@@ -30,6 +31,7 @@ export default function PlanningActionBar({
   isSaving,
   onReset,
   onSave,
+  resetLabel = 'คืนค่าเริ่มต้น',
 }: PlanningActionBarProps) {
   return (
     <Box
@@ -115,11 +117,11 @@ export default function PlanningActionBar({
         </Box>
 
         <Stack direction="row" spacing={0.8} sx={{ alignItems: 'center', flexShrink: 0 }}>
-          <Tooltip title="คืนค่าเริ่มต้น" arrow>
+          <Tooltip title={resetLabel} arrow>
             <span>
               <IconButton
                 size="small"
-                aria-label="คืนค่าเริ่มต้น"
+                aria-label={resetLabel}
                 onClick={onReset}
                 disabled={isSaving}
                 sx={{

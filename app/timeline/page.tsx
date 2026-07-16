@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import TimelineReadiness from './TimelineReadiness';
 import type { TimelineOperation } from './DayTimeline';
 import { getBangkokDateKey } from './date-utils';
-import { getPlanningDashboardData } from '@/lib/planning';
+import { getTimelineJobs } from '@/lib/planning';
 import { TimelineSkeleton } from '@/app/components/Skeletons';
 
 export const dynamic = 'force-dynamic';
@@ -22,8 +22,8 @@ export default function TimelinePage() {
 }
 
 async function TimelineContainer() {
-  const data = await getPlanningDashboardData();
-  const jobs = data.jobs.filter((job) => TARGET_WORK_CENTERS.includes(job.arbpl as typeof TARGET_WORK_CENTERS[number]));
+  const data = await getTimelineJobs([...TARGET_WORK_CENTERS]);
+  const jobs = data.jobs;
   const currentYear = Number(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Bangkok',
     year: 'numeric',

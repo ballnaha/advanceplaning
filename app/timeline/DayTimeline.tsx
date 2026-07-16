@@ -21,6 +21,7 @@ import PlanningActionBar from '../components/PlanningActionBar';
 import { cleanZpg2d } from '@/lib/zpg1d-helpers';
 import type { PlanningJob } from '@/lib/planning';
 import JobDetailDialog from '../components/JobDetailDialog';
+import NotificationSnackbar from '../components/NotificationSnackbar';
 
 export type TimelineOperation = {
   id: number;
@@ -285,6 +286,20 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
 
   const [dragOverJobId, setDragOverJobId] = React.useState<number | string | null>(null);
 
+  const [snackbar, setSnackbar] = React.useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'info' | 'warning' | 'error';
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+
+  const handleSnackbarClose = React.useCallback(() => {
+    setSnackbar((prev) => ({ ...prev, open: false }));
+  }, []);
+
   const handleDragStartAny = React.useCallback(() => {}, []);
   const handleDragEndAny = React.useCallback(() => {
     setDragOverJobId(null);
@@ -312,6 +327,11 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
   const handleCancel = () => {
     setLocalOperations(initialOperations);
     setHasChanges(false);
+    setSnackbar({
+      open: true,
+      message: 'ล้างการเปลี่ยนแปลงของตารางแผนงานแล้ว — คืนค่าจาก DB ล่าสุด',
+      severity: 'info',
+    });
   };
 
   const handleDropJob = React.useCallback((jobId: number, targetWorkCenter: string, targetDay: string) => {
@@ -825,6 +845,13 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
         job={selectedJobForModal}
         lacquerColorMap={lacquerColorMap}
         onClose={() => setSelectedJobForModal(null)}
+      />
+
+      <NotificationSnackbar
+        open={snackbar.open}
+        message={snackbar.message}
+        severity={snackbar.severity}
+        onClose={handleSnackbarClose}
       />
     </Paper>
   );

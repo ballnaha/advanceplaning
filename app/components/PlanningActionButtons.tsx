@@ -7,11 +7,11 @@ type PlanningActionButtonsProps = {
   isDirty: boolean;
   isSaving: boolean;
   density?: 'default' | 'compact';
-  onReset: () => void;
+  onAutoSequence: () => void;
   onSave: () => void;
 };
 
-const ResetIcon = () => (
+const AutoSequenceIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5 }}>
     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
     <path d="M16 3h5v5"/>
@@ -30,7 +30,7 @@ export default function PlanningActionButtons({
   isDirty,
   isSaving,
   density = 'default',
-  onReset,
+  onAutoSequence,
   onSave,
 }: PlanningActionButtonsProps) {
   const compact = density === 'compact';
@@ -54,24 +54,24 @@ export default function PlanningActionButtons({
       spacing={compact ? 0.5 : 1}
       sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
     >
-      {/* DEFAULT SETTING */}
+      {/* AUTO SEQUENCE */}
       <Button
         size="small"
         variant="outlined"
-        onClick={onReset}
+        onClick={onAutoSequence}
         disabled={isSaving}
         sx={{
           ...baseButtonSx,
           color: '#475569',
           borderColor: '#cbd5e1',
           '&:hover': {
-            borderColor: '#ef4444',
-            color: '#dc2626',
-            bgcolor: 'rgba(239, 68, 68, 0.04)',
+            borderColor: '#4f46e5',
+            color: '#4338ca',
+            bgcolor: 'rgba(79, 70, 229, 0.04)',
           },
         }}
       >
-        <ResetIcon />
+        <AutoSequenceIcon />
         DEFAULT SETTING
       </Button>
 

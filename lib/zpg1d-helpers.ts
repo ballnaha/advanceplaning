@@ -12,17 +12,17 @@ export const ZPG1D_GROUPS = [
   {
     id: 'ne',
     label: 'เหล็กอาบ NE',
-    colorAccent: '#d97706', // Amber
+    colorAccent: '#7c3aed', // Purple
   },
   {
     id: 'drd',
     label: 'เหล็กอาบ DRD',
-    colorAccent: '#e11d48', // Rose
+    colorAccent: '#db2777', // Pink
   },
   {
     id: 'eoe',
     label: 'เหล็กอาบ EOE',
-    colorAccent: '#059669', // Emerald
+    colorAccent: '#64748b', // Slate
   },
 ] as const;
 
@@ -75,6 +75,7 @@ export function cleanZpg2d(zpg2d: string | null): string {
 
 export interface SortableJob {
   arbpl: string;
+  aufnr: string;
   zpg1d: string | null;
   queueGroup?: string | null;
   zpg2d: string | null;
@@ -85,6 +86,119 @@ export interface SortableJob {
   findate?: string | Date | null;
   seqno: number | null;
   sourceRow: number;
+}
+
+/**
+ * Keep the setup-efficient slots chosen by the main sorter, but never let a
+ * later operation of the same order occupy an earlier slot. Operations can
+ * have different L/Q codes, so sorting only inside each L/Q group is not
+ * sufficient to guarantee this production-order constraint.
+ */
+function orderOperationsWithinExistingSlots<T extends SortableJob>(jobs: T[]): T[] {
+  const operationsByOrder = new Map<string, T[]>();
+
+  for (const job of jobs) {
+    const key = `${job.arbpl}\u0000${job.aufnr}`;
+    const operations = operationsByOrder.get(key);
+    if (operations) {
+      operations.push(job);
+    } else {
+      operationsByOrder.set(key, [job]);
+    }
+  }
+
+  for (const operations of operationsByOrder.values()) {
+    operations.sort((a, b) => {
+      const operationCompare = (a.vornr ?? '').localeCompare(b.vornr ?? '', 'th', { numeric: true });
+      return operationCompare !== 0 ? operationCompare : a.sourceRow - b.sourceRow;
+    });
+  }
+
+  const nextOperationIndex = new Map<string, number>();
+  return jobs.map((job) => {
+    const key = `${job.arbpl}\u0000${job.aufnr}`;
+    const index = nextOperationIndex.get(key) ?? 0;
+    nextOperationIndex.set(key, index + 1);
+    return operationsByOrder.get(key)?.[index] ?? job;
+  });
+}
+
+function preferContiguousOrdersWithoutExtraLqChanges<T extends SortableJob>(jobs: T[]): T[] {
+  const dateText = (value: string | Date | null | undefined) => {
+    if (!value) return '9999-12-31';
+    return value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  };
+  const bucketKey = (job: T) => [
+    job.arbpl,
+    job.queueGroup?.trim() || job.zpg1d || 'ไม่ระบุ',
+    dateText(job.stdate),
+    cleanZpg2d(job.zpg2d),
+    job.zpg3d?.trim() || 'ไม่ระบุ',
+    dateText(job.findate),
+  ].join('\u0000');
+  const lqKey = (job: T) => job.zlmat?.trim() || 'ไม่ระบุ';
+  const countLqChanges = (segment: T[], previousJob?: T, nextJob?: T) => {
+    const jobsToCount = [
+      ...(previousJob ? [previousJob] : []),
+      ...segment,
+      ...(nextJob ? [nextJob] : []),
+    ];
+    let changes = 0;
+    for (let index = 1; index < jobsToCount.length; index += 1) {
+      if (lqKey(jobsToCount[index - 1]) !== lqKey(jobsToCount[index])) changes += 1;
+    }
+    return changes;
+  };
+  const optimizeSegment = (segment: T[], previousJob?: T, nextJob?: T) => {
+    let optimized = [...segment];
+    const orders = Array.from(new Set(segment.map((job) => job.aufnr)));
+
+    for (const order of orders) {
+      const positions = optimized
+        .map((job, index) => job.aufnr === order ? index : -1)
+        .filter((index) => index >= 0);
+      if (positions.length < 2) continue;
+      if (positions.every((position, index) => index === 0 || position === positions[index - 1] + 1)) continue;
+
+      const orderJobs = optimized.filter((job) => job.aufnr === order);
+      const remainingJobs = optimized.filter((job) => job.aufnr !== order);
+      const candidate = [...remainingJobs];
+      candidate.splice(positions[0], 0, ...orderJobs);
+
+      if (
+        countLqChanges(candidate, previousJob, nextJob) <=
+        countLqChanges(optimized, previousJob, nextJob)
+      ) {
+        optimized = candidate;
+      }
+    }
+
+    return optimized;
+  };
+
+  const segments: T[][] = [];
+  let segment: T[] = [];
+  let currentBucket: string | null = null;
+  for (const job of jobs) {
+    const jobBucket = bucketKey(job);
+    if (currentBucket !== null && jobBucket !== currentBucket) {
+      segments.push(segment);
+      segment = [];
+    }
+    currentBucket = jobBucket;
+    segment.push(job);
+  }
+  if (segment.length > 0) segments.push(segment);
+
+  const result: T[] = [];
+  segments.forEach((currentSegment, index) => {
+    result.push(...optimizeSegment(
+      currentSegment,
+      result.at(-1),
+      segments[index + 1]?.[0],
+    ));
+  });
+  return result;
 }
 
 export function sortJobsWithZpg3dTransition<T extends SortableJob>(
@@ -155,7 +269,9 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
       sortedUrgentJobs.push(...urgentByDate[d]);
     }
 
-    return [...sortedUrgentJobs, ...normalJobs];
+    return preferContiguousOrdersWithoutExtraLqChanges(
+      orderOperationsWithinExistingSlots([...sortedUrgentJobs, ...normalJobs]),
+    );
   }
 
   // Group by arbpl first
@@ -247,38 +363,40 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
           for (const zpg3d of sortedKeys) {
             const colorJobs = byZpg3d[zpg3d];
 
-            const byVornr: Record<string, T[]> = {};
+            const byZlmat: Record<string, T[]> = {};
             for (const job of colorJobs) {
-              const vornrKey = materialGroupText(job.vornr ?? null);
-              byVornr[vornrKey] ??= [];
-              byVornr[vornrKey].push(job);
+              const zlmatKey = materialGroupText(job.zlmat ?? null);
+              byZlmat[zlmatKey] ??= [];
+              byZlmat[zlmatKey].push(job);
             }
 
             const continuesPreviousColor = zpg3d === lastZpg3d;
-            const sortedVornrKeys = Object.keys(byVornr).sort((a, b) =>
-              a.localeCompare(b, 'th', { numeric: true })
-            );
+            const sortedZlmatKeys = Object.keys(byZlmat).sort((a, b) => {
+              if (continuesPreviousColor && lastZlmat) {
+                const aMatch = a === lastZlmat;
+                const bMatch = b === lastZlmat;
+                if (aMatch && !bMatch) return -1;
+                if (!aMatch && bMatch) return 1;
+              }
+              return a.localeCompare(b, 'th', { numeric: true });
+            });
 
-            for (const vornr of sortedVornrKeys) {
-              const byZlmat: Record<string, T[]> = {};
-              for (const job of byVornr[vornr]) {
-                const zlmatKey = materialGroupText(job.zlmat ?? null);
-                byZlmat[zlmatKey] ??= [];
-                byZlmat[zlmatKey].push(job);
+            for (const zlmat of sortedZlmatKeys) {
+              const lacquerJobs = byZlmat[zlmat];
+
+              const byVornr: Record<string, T[]> = {};
+              for (const job of lacquerJobs) {
+                const vornrKey = materialGroupText(job.vornr ?? null);
+                byVornr[vornrKey] ??= [];
+                byVornr[vornrKey].push(job);
               }
 
-              const sortedZlmatKeys = Object.keys(byZlmat).sort((a, b) => {
-                if (continuesPreviousColor && lastZlmat) {
-                  const aMatch = a === lastZlmat;
-                  const bMatch = b === lastZlmat;
-                  if (aMatch && !bMatch) return -1;
-                  if (!aMatch && bMatch) return 1;
-                }
-                return a.localeCompare(b, 'th', { numeric: true });
-              });
+              const sortedVornrKeys = Object.keys(byVornr).sort((a, b) =>
+                a.localeCompare(b, 'th', { numeric: true })
+              );
 
-              for (const zlmat of sortedZlmatKeys) {
-                const lqCodeJobs = byZlmat[zlmat];
+              for (const vornr of sortedVornrKeys) {
+                const lqCodeJobs = byVornr[vornr];
 
                 lqCodeJobs.sort((a, b) => {
                   const dateA = getJobDueDateStr(a);
@@ -309,5 +427,7 @@ export function sortJobsWithZpg3dTransition<T extends SortableJob>(
     }
   }
 
-  return result;
+  return preferContiguousOrdersWithoutExtraLqChanges(
+    orderOperationsWithinExistingSlots(result),
+  );
 }

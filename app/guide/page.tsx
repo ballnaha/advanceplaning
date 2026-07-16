@@ -248,7 +248,7 @@ export default function GuidePage() {
                   <br /><br />
                   • <strong>Filter ไม่ได้จัดลำดับคิวใหม่อัตโนมัติ:</strong>
                   <br />
-                  &nbsp;&nbsp;&nbsp;&nbsp;การเปลี่ยนลำดับเกิดจากการลากวาง ขยับขึ้น-ลง หรือย้าย Work Center โดยผู้ใช้เท่านั้น การเปลี่ยนแปลงยังไม่ลงฐานข้อมูลจนกว่าจะกด SAVE และสามารถกด DEFAULT SETTING เพื่อคืนค่าคิวล่าสุดจากฐานข้อมูลได้
+                  &nbsp;&nbsp;&nbsp;&nbsp;การเปลี่ยนลำดับเกิดจากการลากวาง ขยับขึ้น-ลง ย้าย Work Center หรือกด “จัดเรียงคิวอัตโนมัติ” การเปลี่ยนแปลงยังไม่ลงฐานข้อมูลจนกว่าจะกด SAVE
                 </Typography>
 
                 <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 800, display: 'block', fontSize: '0.875rem', lineHeight: 1.5 }}>

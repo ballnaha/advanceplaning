@@ -13,9 +13,18 @@ import {
   Stack,
   Typography,
   Tooltip,
+  Skeleton,
+  Button,
+  Select,
+  MenuItem,
+  TextField,
 } from '@mui/material';
 import { cleanZpg2d } from '@/lib/zpg1d-helpers';
 import type { PlanningJob } from '@/lib/planning';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs from 'dayjs';
 
 const numberFormatter = new Intl.NumberFormat('th-TH');
 const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -42,6 +51,8 @@ function getStatusStyle(status: string) {
   }
 }
 
+const DEFAULT_WORK_CENTERS = ['111001', '111002', '111003', '111004', '111005'];
+
 type DetailField = {
   key: keyof PlanningJob;
   label: string;
@@ -60,6 +71,8 @@ type JobDetailDialogProps = {
   job: PlanningJob | null;
   lacquerColorMap: Map<string, LacquerColor>;
   onClose: () => void;
+  onQuickMove?: (jobId: number, targetWorkCenter: string, targetStartDate: string) => void;
+  workCenters?: string[];
 };
 
 const detailSections: DetailSection[] = [
@@ -290,14 +303,118 @@ export default function JobDetailDialog({
   job: currentJob,
   lacquerColorMap,
   onClose,
+  onQuickMove,
+  workCenters,
 }: JobDetailDialogProps) {
   const [retainedJob, setRetainedJob] = React.useState<PlanningJob | null>(currentJob);
+  const [selectedJobOverride, setSelectedJobOverride] = React.useState<PlanningJob | null>(null);
+  const [routing, setRouting] = React.useState<PlanningJob[]>([]);
+  const [loadingRouting, setLoadingRouting] = React.useState(false);
 
   React.useEffect(() => {
     if (currentJob) setRetainedJob(currentJob);
   }, [currentJob]);
 
-  const job = currentJob ?? retainedJob;
+  // Reset override when dialog is opened/changed with a new currentJob
+  React.useEffect(() => {
+    setSelectedJobOverride(null);
+    setShowQuickReschedule(false);
+  }, [currentJob]);
+
+  const job = selectedJobOverride ?? currentJob ?? retainedJob;
+
+  const [targetWC, setTargetWC] = React.useState(job?.arbpl || '');
+  const [targetDate, setTargetDate] = React.useState(job?.stdate || '');
+  const [showQuickReschedule, setShowQuickReschedule] = React.useState(false);
+  const [savingQuickMove, setSavingQuickMove] = React.useState(false);
+
+  const wcList = workCenters || DEFAULT_WORK_CENTERS;
+
+  React.useEffect(() => {
+    if (job) {
+      setTargetWC(job.arbpl);
+      setTargetDate(job.stdate || '');
+    }
+  }, [job]);
+
+  const handleMoveClick = async () => {
+    if (!job || !targetWC || !targetDate) return;
+
+    if (onQuickMove) {
+      onQuickMove(job.id, targetWC, targetDate);
+      onClose();
+    } else {
+      setSavingQuickMove(true);
+      try {
+        const duration = calculateInclusiveProductionDays(job.stdate, job.findate) || job.prdday || 1;
+        const newFinishDateStr = dayjs(targetDate).add(duration - 1, 'day').format('YYYY-MM-DD');
+
+        const response = await fetch('/api/jobs/update-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: [
+              {
+                id: job.id,
+                stdate: targetDate,
+                findate: newFinishDateStr,
+                arbpl: targetWC,
+                seqno: job.seqno,
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update schedule');
+        }
+
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        alert('เกิดข้อผิดพลาดในการย้ายเครื่องจักร/วันที่');
+      } finally {
+        setSavingQuickMove(false);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    if (!job?.aufnr) {
+      setRouting([]);
+      return;
+    }
+
+    let active = true;
+    setLoadingRouting(true);
+
+    fetch(`/api/jobs/routing?aufnr=${encodeURIComponent(job.aufnr)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch routing');
+        return res.json();
+      })
+      .then((data) => {
+        if (active && Array.isArray(data)) {
+          setRouting(data);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+      .finally(() => {
+        if (active) setLoadingRouting(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [job?.aufnr]);
+
+  const handleSelectStep = (clickedJob: PlanningJob) => {
+    setSelectedJobOverride(clickedJob);
+    setRetainedJob(clickedJob);
+  };
+
   const lacquerColor = job ? lacquerColorMap.get(getLacquerKey(job)) ?? fallbackLacquerColor : fallbackLacquerColor;
   const productionDays = job ? calculateInclusiveProductionDays(job.stdate, job.findate) ?? job.prdday ?? 0 : 0;
 
@@ -316,7 +433,10 @@ export default function JobDetailDialog({
             enter: 'cubic-bezier(0.16, 1, 0.3, 1)',
             exit: 'cubic-bezier(0.4, 0, 1, 1)',
           },
-          onExited: () => setRetainedJob(null),
+          onExited: () => {
+            setRetainedJob(null);
+            setSelectedJobOverride(null);
+          },
         },
         backdrop: {
           sx: {
@@ -395,6 +515,203 @@ export default function JobDetailDialog({
       <DialogContent sx={{ p: 0, bgcolor: '#f8fafc' }}>
         {job && (
           <Box sx={{ p: 2.5 }}>
+            {/* Routing Flow Stepper */}
+            {routing.length > 0 && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  mb: 2.5,
+                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  borderRadius: 1.5,
+                  bgcolor: '#ffffff',
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block',
+                    color: '#64748b',
+                    fontWeight: 900,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    mb: 2,
+                  }}
+                >
+                  เส้นทางการผลิต (Order Routing Flow)
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    overflowX: 'auto',
+                    pb: 1,
+                    '&::-webkit-scrollbar': {
+                      height: 6,
+                    },
+                    '&::-webkit-scrollbar-track': {
+                      bgcolor: 'rgba(15, 23, 42, 0.02)',
+                    },
+                    '&::-webkit-scrollbar-thumb': {
+                      bgcolor: 'rgba(15, 23, 42, 0.1)',
+                      borderRadius: 3,
+                    },
+                  }}
+                >
+                  {loadingRouting ? (
+                    <Stack direction="row" spacing={3} sx={{ width: '100%', py: 1 }}>
+                      {Array.from({ length: 4 }).map((_, idx) => (
+                        <Box key={idx} sx={{ minWidth: 140, flex: 1 }}>
+                          <Skeleton variant="circular" width={28} height={28} sx={{ mb: 1 }} />
+                          <Skeleton variant="text" width="60%" height={16} />
+                          <Skeleton variant="text" width="80%" height={12} />
+                        </Box>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Stack direction="row" spacing={0} sx={{ minWidth: '100%', position: 'relative', py: 1 }}>
+                      {routing.map((rJob, idx) => {
+                        const isActive = rJob.id === job.id;
+                        const status = rJob.text1?.trim().toUpperCase() || 'NOT START';
+                        const statusStyle = getStatusStyle(status);
+                        const isLast = idx === routing.length - 1;
+
+                        return (
+                          <Box
+                            key={rJob.id}
+                            onClick={() => handleSelectStep(rJob)}
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              position: 'relative',
+                              flex: 1,
+                              minWidth: 140,
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              '&:hover': {
+                                '& .step-dot': {
+                                  transform: 'scale(1.15)',
+                                  boxShadow: `0 0 0 4px ${statusStyle.border}3d`,
+                                },
+                                '& .step-title': {
+                                  color: '#4f46e5',
+                                },
+                              },
+                            }}
+                          >
+                            {/* Horizontal Connector Line */}
+                            {!isLast && (
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  top: 14,
+                                  left: '50%',
+                                  right: '-50%',
+                                  height: 3,
+                                  bgcolor: status === 'DONE' ? '#10b981' : 'rgba(15, 23, 42, 0.08)',
+                                  zIndex: 1,
+                                  transition: 'background-color 0.2s ease',
+                                }}
+                              />
+                            )}
+
+                            {/* Step Dot/Circle */}
+                            <Box
+                              className="step-dot"
+                              sx={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: '50%',
+                                bgcolor: statusStyle.bg,
+                                border: `2px solid ${statusStyle.border}`,
+                                color: statusStyle.color,
+                                display: 'grid',
+                                placeItems: 'center',
+                                fontWeight: 900,
+                                fontSize: '0.72rem',
+                                zIndex: 2,
+                                position: 'relative',
+                                transition: 'all 0.2s ease',
+                                ...(isActive ? {
+                                  boxShadow: '0 0 0 4px rgba(79, 70, 229, 0.25)',
+                                  borderColor: '#4f46e5',
+                                  bgcolor: '#4f46e5',
+                                  color: '#ffffff',
+                                  animation: 'pulseGlow 2s infinite ease-in-out',
+                                  '@keyframes pulseGlow': {
+                                    '0%': { boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.4)' },
+                                    '70%': { boxShadow: '0 0 0 6px rgba(79, 70, 229, 0)' },
+                                    '100%': { boxShadow: '0 0 0 0 rgba(79, 70, 229, 0)' },
+                                  },
+                                } : {}),
+                              }}
+                            >
+                              {idx + 1}
+                            </Box>
+
+                            {/* Step labels */}
+                            <Box sx={{ mt: 1.5, textAlign: 'center', px: 1, width: '100%' }}>
+                              <Typography
+                                className="step-title"
+                                sx={{
+                                  fontSize: '0.8rem',
+                                  fontWeight: isActive ? 950 : 800,
+                                  color: isActive ? '#4f46e5' : '#0f172a',
+                                  lineHeight: 1.2,
+                                  transition: 'color 0.15s ease',
+                                }}
+                              >
+                                OP {rJob.vornr || '-'}
+                              </Typography>
+                              
+                              <Typography
+                                sx={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 850,
+                                  color: '#0f766e',
+                                  mt: 0.2,
+                                }}
+                              >
+                                WC {rJob.arbpl}
+                              </Typography>
+
+                              <Typography
+                                noWrap
+                                title={rJob.ltxa1 || ''}
+                                sx={{
+                                  fontSize: '0.66rem',
+                                  color: '#64748b',
+                                  mt: 0.15,
+                                  maxWidth: '100%',
+                                  fontWeight: 650,
+                                }}
+                              >
+                                {rJob.ltxa1 || '-'}
+                              </Typography>
+
+                              <Typography
+                                sx={{
+                                  fontSize: '0.62rem',
+                                  color: '#94a3b8',
+                                  mt: 0.2,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {rJob.stdate ? `${rJob.stdate.split('-').slice(1).reverse().join('/')}` : '-'}
+                                {rJob.findate ? ` - ${rJob.findate.split('-').slice(1).reverse().join('/')}` : ''}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                    </Stack>
+                  )}
+                </Box>
+              </Paper>
+            )}
+
             <Box
               sx={{
                 display: 'grid',
@@ -424,6 +741,123 @@ export default function JobDetailDialog({
               <SummaryTile label="PRD.(Days)" value={`${formatNumber(productionDays)} วัน`} />
               <SummaryTile label="Qty" value={formatNumber(job.mgvrg)} />
             </Box>
+
+            {/* Toggle Button for Quick Reschedule */}
+            {wcList.length > 0 && (
+              <Stack direction="row" sx={{ justifyContent: 'flex-end', mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setShowQuickReschedule(!showQuickReschedule)}
+                  sx={{
+                    borderRadius: 1.5,
+                    fontSize: '0.78rem',
+                    fontWeight: 850,
+                    color: '#4f46e5',
+                    borderColor: '#cbd5e1',
+                    px: 1.5,
+                    textTransform: 'none',
+                    '&:hover': {
+                      bgcolor: 'rgba(79, 70, 229, 0.04)',
+                      borderColor: '#4f46e5',
+                    }
+                  }}
+                >
+                  {showQuickReschedule ? '❌ ปิดเครื่องมือย้ายงาน' : '⚡ ย้ายแผนการผลิตด่วน (Quick Reschedule)'}
+                </Button>
+              </Stack>
+            )}
+
+            {/* Quick Reschedule Section */}
+            {showQuickReschedule && wcList.length > 0 && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  mb: 2.5,
+                  borderRadius: 2.25,
+                  border: '1px solid #4f46e5',
+                  background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.03) 0%, rgba(99, 102, 241, 0.01) 100%)',
+                }}
+              >
+                <Typography sx={{ color: '#4f46e5', fontWeight: 900, fontSize: '0.86rem', display: 'flex', alignItems: 'center', gap: 0.75, mb: 1.5 }}>
+                  ⚡ QUICK RESCHEDULE · ย้ายงานทางลัด
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: 'flex-end' }}>
+                  <Box sx={{ flex: 1, minWidth: 120 }}>
+                    <Typography sx={{ fontSize: '0.74rem', color: '#475569', fontWeight: 750, mb: 0.75 }}>
+                      ย้ายไปเครื่องจักร (Work Center)
+                    </Typography>
+                    <Select
+                      size="small"
+                      fullWidth
+                      disabled={savingQuickMove}
+                      value={targetWC}
+                      onChange={(e) => setTargetWC(e.target.value)}
+                      sx={{ borderRadius: 1.5, fontSize: '0.84rem', fontWeight: 800, bgcolor: '#ffffff' }}
+                    >
+                      {wcList.map((wc) => (
+                        <MenuItem key={wc} value={wc} sx={{ fontSize: '0.84rem', fontWeight: 700 }}>
+                          WC {wc}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Box>
+
+                  <Box sx={{ flex: 1.5, minWidth: 160 }}>
+                    <Typography sx={{ fontSize: '0.74rem', color: '#475569', fontWeight: 750, mb: 0.75 }}>
+                      กำหนดวันที่เริ่มต้นแผนใหม่ (Start Date)
+                    </Typography>
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                      <DatePicker
+                        format="DD/MM/YYYY"
+                        disabled={savingQuickMove}
+                        value={targetDate ? dayjs(targetDate) : null}
+                        onChange={(newValue) => {
+                          if (newValue) {
+                            setTargetDate(newValue.format('YYYY-MM-DD'));
+                          }
+                        }}
+                        slotProps={{
+                          textField: {
+                            size: 'small',
+                            fullWidth: true,
+                            sx: {
+                              '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: '#ffffff' },
+                              '& .MuiInputBase-input': { fontSize: '0.84rem', fontWeight: 800, py: 1.05 }
+                            }
+                          }
+                        }}
+                      />
+                    </LocalizationProvider>
+                  </Box>
+
+                  <Button
+                    variant="contained"
+                    size="medium"
+                    disabled={savingQuickMove}
+                    onClick={handleMoveClick}
+                    sx={{
+                      height: 38,
+                      borderRadius: 1.5,
+                      fontSize: '0.82rem',
+                      fontWeight: 850,
+                      bgcolor: '#4f46e5',
+                      color: '#ffffff',
+                      px: 2.5,
+                      boxShadow: '0 4px 10px rgba(79, 70, 229, 0.25)',
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: '#4338ca',
+                        boxShadow: '0 6px 14px rgba(79, 70, 229, 0.35)',
+                      }
+                    }}
+                  >
+                    {savingQuickMove ? 'กำลังบันทึก...' : 'ย้ายแผนการผลิต'}
+                  </Button>
+                </Stack>
+              </Paper>
+            )}
 
             <Box
               sx={{
@@ -501,10 +935,10 @@ export default function JobDetailDialog({
                   </Paper>
                 );
               })}
-            </Box>
           </Box>
-        )}
-      </DialogContent>
-    </Dialog>
+        </Box>
+      )}
+    </DialogContent>
+  </Dialog>
   );
 }

@@ -41,7 +41,14 @@ import {
   StatusUp,
   TaskSquare,
 } from 'iconsax-react';
-import { getJobGroupId, getJobGroupSortOrder, getQueueGroupId, getQueueGroupSortOrder, cleanZpg2d } from '@/lib/zpg1d-helpers';
+import {
+  cleanZpg2d,
+  getJobGroupId,
+  getJobGroupSortOrder,
+  getQueueGroupId,
+  getQueueGroupSortOrder,
+  sortJobsWithZpg3dTransition,
+} from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
 
 const TARGET_WORK_CENTER_IDS = new Set(['111001', '111002', '111003', '111004', '111005']);
@@ -883,7 +890,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       setLastMovedJobIds([]);
       setSnackbar({
         open: true,
-        message: `บันทึก Seq. ลงฐานข้อมูลสำเร็จ (${workCentersToSave.join(', ')})`,
+        message: `บันทึกเรียบร้อย! (${workCentersToSave.join(', ')})`,
         severity: 'success',
       });
     } catch (err) {
@@ -1133,62 +1140,33 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     }
   }, [markLastMovedJobs, showDropConfirmation]);
 
-  // DEFAULT SETTING = discard all changes connected to the selected Work centers.
-  // A cross-WC move affects both ends, so restore the connected centers atomically.
-  const resetWorkCentersToInitial = React.useCallback((workCenters: string[]) => {
-    const requestedWorkCenters = new Set(workCenters);
-    if (requestedWorkCenters.size === 0) return;
+  const applyAutoSequence = React.useCallback((workCenters: string[]) => {
+    const targetWorkCenters = new Set(workCenters);
+    if (targetWorkCenters.size === 0) return;
 
     setJobs((current) => {
-      const currentById = new Map(current.map((job) => [job.id, job]));
-      const affectedWorkCenters = new Set(requestedWorkCenters);
-
-      let expanded = true;
-      while (expanded) {
-        expanded = false;
-        for (const initialJob of initialJobs) {
-          const currentJob = currentById.get(initialJob.id) ?? initialJob;
-          if (
-            affectedWorkCenters.has(initialJob.arbpl) ||
-            affectedWorkCenters.has(currentJob.arbpl)
-          ) {
-            if (!affectedWorkCenters.has(initialJob.arbpl)) {
-              affectedWorkCenters.add(initialJob.arbpl);
-              expanded = true;
-            }
-            if (!affectedWorkCenters.has(currentJob.arbpl)) {
-              affectedWorkCenters.add(currentJob.arbpl);
-              expanded = true;
-            }
-          }
-        }
+      const sortedQueues = new Map<string, PlanningJob[]>();
+      for (const workCenter of targetWorkCenters) {
+        const sorted = sortJobsWithZpg3dTransition(
+          current.filter((job) => job.arbpl === workCenter),
+        ).map((job, index) => ({ ...job, seqno: index + 1 }));
+        sortedQueues.set(workCenter, sorted);
       }
 
-      const currentGroups = groupByWorkCenter(current);
-      const initialGroups = groupByWorkCenter(initialJobs);
-      const workCenterOrder = Array.from(new Set([
-        ...sortedWorkCenters.map((item) => item.arbpl),
-        ...initialJobs.map((job) => job.arbpl),
-        ...current.map((job) => job.arbpl),
-      ])).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
-
-      const result: PlanningJob[] = [];
-      for (const workCenter of workCenterOrder) {
-        const group = affectedWorkCenters.has(workCenter)
-          ? initialGroups[workCenter] ?? []
-          : currentGroups[workCenter] ?? [];
-        result.push(...group);
-      }
-      return result;
+      return current.map((job) => (
+        targetWorkCenters.has(job.arbpl)
+          ? sortedQueues.get(job.arbpl)?.shift() ?? job
+          : job
+      ));
     });
     setSnackbar({
       open: true,
       message: workCenters.length > 1
-        ? 'ล้างการเปลี่ยนแปลงของ Work center ที่เลือกแล้ว — คืนค่าจาก DB ล่าสุด'
-        : `ล้างการเปลี่ยนแปลงของ ${workCenters[0]} แล้ว — คืนค่าจาก DB ล่าสุด`,
-      severity: 'info',
+        ? 'จัดเรียงคิวอัตโนมัติทุก Work Center แล้ว — กด SAVE เพื่อบันทึก'
+        : `จัดเรียงคิวอัตโนมัติ ${workCenters[0]} แล้ว — กด SAVE เพื่อบันทึก`,
+      severity: 'success',
     });
-  }, [initialJobs, sortedWorkCenters]);
+  }, []);
 
   const saveSequence = React.useCallback(async (workCenter: string) => {
     setSavingWorkCenter(workCenter);
@@ -1610,7 +1588,17 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
               }}
             >
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary', minWidth: 160 }}>
-                <Category size="18" color="#4f46e5" variant="Bulk" />
+                <Box
+                  component="img"
+                  src="/machine.svg"
+                  alt="machines"
+                  sx={{
+                    width: 18,
+                    height: 18,
+                    display: 'block',
+                    filter: 'invert(27%) sepia(91%) saturate(2453%) hue-rotate(232deg) brightness(88%) contrast(92%)',
+                  }}
+                />
                 <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: '0.02em' }}>
                   เครื่องจักร (Machines):
                 </Typography>
@@ -1646,11 +1634,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                     left: 4,
                     width: 132,
                     borderRadius: '10px',
-                    bgcolor: selectedWorkCenter === 'ALL' ? '#b45309' : '#4f46e5',
-                    boxShadow:
-                      selectedWorkCenter === 'ALL'
-                        ? '0 3px 10px rgba(180, 83, 9, 0.3)'
-                        : '0 3px 10px rgba(79, 70, 229, 0.3)',
+                    bgcolor: '#4f46e5',
+                    boxShadow: '0 3px 10px rgba(79, 70, 229, 0.3)',
                     transform: `translateX(${machineTabIndex * 136}px)`,
                     transition: 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1), background-color 260ms ease, box-shadow 260ms ease',
                     willChange: 'transform',
@@ -1700,7 +1685,20 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                       disableRipple
                       aria-pressed={isSelected}
                       onClick={() => handleWorkCenterChange(item.arbpl)}
-                      startIcon={<Setting2 size="16" variant={isSelected ? 'Bold' : 'Outline'} color="currentColor" />}
+                      startIcon={
+                        <Box
+                          component="img"
+                          src="/machine.svg"
+                          alt="machine"
+                          sx={{
+                            width: 16,
+                            height: 16,
+                            display: 'block',
+                            opacity: isSelected ? 1 : 0.65,
+                            filter: isSelected ? 'brightness(0) invert(1)' : 'none',
+                          }}
+                        />
+                      }
                       sx={{
                         zIndex: 1,
                         flex: '0 0 132px',
@@ -2292,8 +2290,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                     <PlanningActionButtons
                       isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
                       isSaving={savingAll || savingWorkCenter !== null}
-                      onReset={() => {
-                        resetWorkCentersToInitial(visibleWorkCenters.map((item) => item.arbpl));
+                      onAutoSequence={() => {
+                        applyAutoSequence(visibleWorkCenters.map((item) => item.arbpl));
                       }}
                       onSave={() => {
                         if (deferredWorkCenter === 'ALL') {
@@ -2593,8 +2591,9 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           <PlanningActionBar
             isSaving={savingAll || savingWorkCenter !== null}
             onReset={() => {
-              resetWorkCentersToInitial(visibleWorkCenters.map((item) => item.arbpl));
+              applyAutoSequence(visibleWorkCenters.map((item) => item.arbpl));
             }}
+            resetLabel="DEFAULT SETTING"
             onSave={saveAllDirty}
           />
         )}

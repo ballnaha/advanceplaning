@@ -1,7 +1,11 @@
 import 'server-only';
 
 import { prisma } from './prisma';
-import { getJobGroupSortOrder, cleanZpg2d, sortJobsWithZpg3dTransition } from './zpg1d-helpers';
+import {
+  getJobGroupSortOrder,
+  cleanZpg2d,
+  sortJobsWithZpg3dTransition,
+} from './zpg1d-helpers';
 
 export type PlanningJob = {
   id: number;
@@ -81,6 +85,8 @@ export type PlanningDashboardData = {
   generatedAt: string;
 };
 
+type RawProductionJob = Awaited<ReturnType<typeof prisma.productionJob.findMany>>[number];
+
 function toNumber(value: unknown) {
   if (value === null || value === undefined) return 0;
   return Number(value);
@@ -98,7 +104,7 @@ function materialGroupText(value: string | null) {
   return value?.trim() || 'ไม่ระบุ';
 }
 
-function serializeJob(job: Awaited<ReturnType<typeof prisma.productionJob.findMany>>[number]): PlanningJob {
+function serializeJob(job: RawProductionJob): PlanningJob {
   return {
     id: job.id,
     sourceRow: job.sourceRow,
@@ -143,6 +149,38 @@ function serializeJob(job: Awaited<ReturnType<typeof prisma.productionJob.findMa
   };
 }
 
+function buildInitialQueues(jobs: RawProductionJob[]) {
+  const byWorkCenter = new Map<string, RawProductionJob[]>();
+  for (const job of jobs) {
+    const workCenterJobs = byWorkCenter.get(job.arbpl);
+    if (workCenterJobs) {
+      workCenterJobs.push(job);
+    } else {
+      byWorkCenter.set(job.arbpl, [job]);
+    }
+  }
+
+  const result: RawProductionJob[] = [];
+  const workCenters = Array.from(byWorkCenter.keys()).sort((a, b) =>
+    a.localeCompare(b, 'th', { numeric: true })
+  );
+
+  for (const workCenter of workCenters) {
+    const workCenterJobs = byWorkCenter.get(workCenter)!;
+    const savedSequences = new Set(workCenterJobs.map((job) => job.seqno));
+    const hasCompleteSavedQueue =
+      workCenterJobs.every((job) => job.seqno > 0) &&
+      savedSequences.size === workCenterJobs.length;
+    const queue = hasCompleteSavedQueue
+      ? workCenterJobs
+      : sortJobsWithZpg3dTransition(workCenterJobs);
+
+    result.push(...queue.map((job, index) => ({ ...job, seqno: index + 1 })));
+  }
+
+  return result;
+}
+
 export async function getPlanningDashboardData(): Promise<PlanningDashboardData> {
   const jobs = await prisma.productionJob.findMany({
     orderBy: [
@@ -152,32 +190,8 @@ export async function getPlanningDashboardData(): Promise<PlanningDashboardData>
     ],
   });
 
-  // Group jobs by Work Center (arbpl)
-  const byArbpl = new Map<string, typeof jobs>();
-  for (const job of jobs) {
-    let list = byArbpl.get(job.arbpl);
-    if (!list) {
-      list = [];
-      byArbpl.set(job.arbpl, list);
-    }
-    list.push(job);
-  }
-
-  // Always normalize the initial dashboard queue using the production sequence.
-  // Saved seqno is retained for persistence, but must not place a later OP before
-  // an earlier OP from the same Work Order when the dashboard first loads.
-  const sortedJobsList: typeof jobs = [];
-  const sortedArbpls = Array.from(byArbpl.keys()).sort((a, b) =>
-    a.localeCompare(b, 'th', { numeric: true })
-  );
-
-  for (const arbpl of sortedArbpls) {
-    const wcJobs = byArbpl.get(arbpl)!;
-    const defaultSorted = sortJobsWithZpg3dTransition(wcJobs);
-    sortedJobsList.push(...defaultSorted);
-  }
-
-  const sortedJobs = sortedJobsList;
+  // Dashboard and Gantt must share this exact first-load/saved-queue decision.
+  const sortedJobs = buildInitialQueues(jobs);
 
   const byWorkCenter = new Map<string, WorkCenterSummary & { lqSet: Set<string> }>();
   const byDay = new Map<string, DailyLoad>();
@@ -272,6 +286,30 @@ export async function getPlanningDashboardData(): Promise<PlanningDashboardData>
       opdays: Number(opdays.toFixed(2)),
       mgvrg,
     },
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Optimized query for the Timeline page — fetches only jobs
+ * belonging to the specified work centers instead of the entire table.
+ */
+export async function getTimelineJobs(targetWorkCenters: string[]): Promise<{ jobs: PlanningJob[]; generatedAt: string }> {
+  const rawJobs = await prisma.productionJob.findMany({
+    where: {
+      arbpl: { in: targetWorkCenters },
+    },
+    orderBy: [
+      { arbpl: 'asc' },
+      { seqno: 'asc' },
+      { sourceRow: 'asc' },
+    ],
+  });
+
+  const initialQueue = buildInitialQueues(rawJobs);
+
+  return {
+    jobs: initialQueue.map(serializeJob),
     generatedAt: new Date().toISOString(),
   };
 }

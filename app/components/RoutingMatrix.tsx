@@ -423,9 +423,9 @@ function RoutingMatrix({
         <Box
           sx={{
             overflow: 'auto',
-            height: { xs: '70dvh', sm: '74dvh', lg: '78dvh' },
-            minHeight: { xs: 420, sm: 520 },
-            maxHeight: 900,
+            height: { xs: '78dvh', sm: '82dvh', lg: '86dvh' },
+            minHeight: { xs: 550, sm: 700 },
+            maxHeight: 1200,
           }}
         >
           <Box sx={{ minWidth: `${orderColumnWidth + workCenters.length * 290}px` }}>

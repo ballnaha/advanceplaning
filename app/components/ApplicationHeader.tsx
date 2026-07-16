@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Box, Button, Container, Stack, Typography, IconButton, Tooltip } from '@mui/material';
-import { Book1, Calendar, Category, ChartSquare, Data, Login } from 'iconsax-react';
+import { Book1, Calendar, Category, ChartSquare, Data, Login, Clock } from 'iconsax-react';
 import { useNavigation } from '../NavigationContext';
 
 const navigation = [
   { label: 'แดชบอร์ดหลัก', title: 'Planning Dashboard', href: '/', icon: Category },
-  { label: 'ไทม์ไลน์เครื่องจักร', title: 'Resource Timeline', href: '/timeline', icon: Calendar },
+  { label: 'กำลังผลิต & Gantt', title: 'Resource Timeline (Gantt)', href: '/timeline', icon: Clock },
   { label: 'คู่มือการใช้งาน', title: 'คู่มือการใช้งาน', href: '/guide', icon: Book1 },
 ] as const;
 
@@ -69,24 +69,30 @@ export default function ApplicationHeader() {
               sx={{
                 width: 42,
                 height: 42,
-                display: 'grid',
-                placeItems: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 borderRadius: '12px',
-                color: '#ffffff',
-                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #06b6d4 100%)',
-                boxShadow: '0 8px 20px rgba(79, 70, 229, 0.22)',
-                transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                cursor: 'pointer',
-                '&:hover': {
-                  transform: 'rotate(8deg) scale(1.06)',
-                  boxShadow: '0 12px 24px rgba(79, 70, 229, 0.35)',
-                },
+                bgcolor: '#ffffff',
+                border: '1px solid rgba(15, 23, 42, 0.08)',
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.04)',
+                overflow: 'hidden',
+                p: 0.5,
               }}
               component={Link}
               href="/"
               onClick={() => startNavigation('/')}
             >
-              <ChartSquare size="23" color="currentColor" variant="Bold" />
+              <Box
+                component="img"
+                src="/images/psc_logo.png"
+                alt="PSC Logo"
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+              />
             </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column' }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -115,7 +121,7 @@ export default function ApplicationHeader() {
                 spacing={0}
                 sx={{
                   position: 'relative',
-                  minWidth: { xs: 260, sm: 360, md: 420 },
+                  minWidth: { xs: 260, sm: 380, md: 440 },
                   p: 0.5,
                   borderRadius: '9999px',
                   bgcolor: 'rgba(15, 23, 42, 0.038)',
