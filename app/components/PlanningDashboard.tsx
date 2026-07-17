@@ -50,6 +50,10 @@ import {
   sortJobsWithZpg3dTransition,
 } from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
+import {
+  allocateWorkOrdersToWorkCenters,
+  AUTO_WORK_CENTER_IDS,
+} from '@/lib/work-center-allocation';
 
 const TARGET_WORK_CENTER_IDS = new Set(['111001', '111002', '111003', '111004', '111005']);
 const STATUS_FILTER_OPTIONS = ['NOT START', 'START', 'WAIT', 'DONE'] as const;
@@ -478,11 +482,40 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
   const [jobs, setJobs] = React.useState(filteredRawJobs);
   const [initialJobs, setInitialJobs] = React.useState(filteredRawJobs);
+  const [isAllocatingWorkCenters, setIsAllocatingWorkCenters] = React.useState(false);
+  const [allocationSummary, setAllocationSummary] = React.useState<any>(null);
+  const [isDefaultSettingProcessing, setIsDefaultSettingProcessing] = React.useState(false);
+  const [jobsHistory, setJobsHistory] = React.useState<{ state: PlanningJob[]; affectedJobIds: number[] }[]>([]);
+  const [highlightedJobIds, setHighlightedJobIds] = React.useState<Set<number>>(new Set());
+  const [droppedJobIds, setDroppedJobIds] = React.useState<Set<number>>(new Set());
+
+  const jobsRef = React.useRef(jobs);
+  React.useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
+
+  const pushToHistory = React.useCallback((affectedJobIds: number[] = []) => {
+    setJobsHistory((prev) => [...prev, { state: jobsRef.current, affectedJobIds }]);
+  }, []);
+
+  const triggerDropHighlight = React.useCallback((jobIds: number[]) => {
+    if (jobIds.length === 0) return;
+    const idsSet = new Set(jobIds);
+    setDroppedJobIds(idsSet);
+    window.setTimeout(() => {
+      setDroppedJobIds((prev) => {
+        const next = new Set(prev);
+        jobIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 1000);
+  }, []);
 
   // Sync state if prop changes
   React.useEffect(() => {
     setJobs(filteredRawJobs);
     setInitialJobs(filteredRawJobs);
+    setJobsHistory([]);
   }, [filteredRawJobs]);
 
   const sortedWorkCenters = React.useMemo(
@@ -885,6 +918,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       ));
 
       setJobs(savedJobs);
+      setJobsHistory([]); // Clear history on save
       setInitialJobs(savedJobs);
       setSelectedJobIds(new Set());
       setLastMovedJobIds([]);
@@ -1000,6 +1034,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     let reordered = false;
     const draggedIdSet = new Set(draggedJobIds);
 
+    pushToHistory(draggedJobIds);
     setJobs((current) => {
       const targetJobObj = current.find((j) => j.id === targetJobId);
       if (!targetJobObj) return current;
@@ -1057,10 +1092,9 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       return newJobsList;
     });
 
-    if (reordered) {
-      showDropConfirmation(draggedJobIds, position);
-    }
-  }, [showDropConfirmation]);
+    showDropConfirmation(draggedJobIds, position);
+    triggerDropHighlight(draggedJobIds);
+  }, [showDropConfirmation, triggerDropHighlight]);
 
   const moveJobOneStep = React.useCallback((
     workCenter: string,
@@ -1068,9 +1102,12 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     direction: 'up' | 'down',
   ) => {
     let moved = false;
-    let targetIds: number[] = [];
+    let targetIds: number[] = selectedJobIdsRef.current.has(jobId)
+      ? Array.from(selectedJobIdsRef.current)
+      : [jobId];
 
     setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
+    pushToHistory(targetIds);
     setJobs((current) => {
       const workCenterJobs = current.filter((job) => job.arbpl === workCenter);
 
@@ -1141,32 +1178,123 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   }, [markLastMovedJobs, showDropConfirmation]);
 
   const applyAutoSequence = React.useCallback((workCenters: string[]) => {
-    const targetWorkCenters = new Set(workCenters);
-    if (targetWorkCenters.size === 0) return;
+    if (isDefaultSettingProcessing) return;
 
-    setJobs((current) => {
-      const sortedQueues = new Map<string, PlanningJob[]>();
-      for (const workCenter of targetWorkCenters) {
-        const sorted = sortJobsWithZpg3dTransition(
-          current.filter((job) => job.arbpl === workCenter),
-        ).map((job, index) => ({ ...job, seqno: index + 1 }));
-        sortedQueues.set(workCenter, sorted);
-      }
-
-      return current.map((job) => (
-        targetWorkCenters.has(job.arbpl)
-          ? sortedQueues.get(job.arbpl)?.shift() ?? job
-          : job
-      ));
-    });
+    setAllocationSummary(null);
+    setIsDefaultSettingProcessing(true);
     setSnackbar({
       open: true,
-      message: workCenters.length > 1
-        ? 'จัดเรียงคิวอัตโนมัติทุก Work Center แล้ว — กด SAVE เพื่อบันทึก'
-        : `จัดเรียงคิวอัตโนมัติ ${workCenters[0]} แล้ว — กด SAVE เพื่อบันทึก`,
-      severity: 'success',
+      message: 'กำลังจัดลำดับเริ่มต้นคิวงานทุกเครื่องจักร...',
+      severity: 'info',
     });
-  }, []);
+
+    window.setTimeout(() => {
+      try {
+        pushToHistory();  // DEFAULT SETTING affects all jobs
+        setJobs((current) => {
+          const initialMap = new Map(initialJobs.map((j) => [j.id, j]));
+
+          // 1. Restore all jobs to initial Excel database/uploaded values
+          const restored = current.map((job) => {
+            const init = initialMap.get(job.id);
+            if (init) {
+              return {
+                ...job,
+                arbpl: init.excelArbpl ?? init.arbpl,
+                stdate: init.excelStdate ?? init.stdate,
+                findate: init.excelFindate ?? init.findate,
+                seqno: init.excelSeqno ?? init.seqno,
+                queueGroup: null, // excel default has no custom steel group
+              };
+            }
+            return job;
+          });
+
+          // 2. Group restored jobs by Work Center
+          const byArbpl: Record<string, PlanningJob[]> = {};
+          restored.forEach((job) => {
+            byArbpl[job.arbpl] ??= [];
+            byArbpl[job.arbpl].push(job);
+          });
+
+          // 3. Sort each Work Center using the transition sort helper
+          const updatedJobs: PlanningJob[] = [];
+          Object.keys(byArbpl).forEach((wc) => {
+            const wcJobs = byArbpl[wc];
+            const sorted = sortJobsWithZpg3dTransition(wcJobs);
+            const resequenced = sorted.map((job, idx) => ({
+              ...job,
+              seqno: idx + 1,
+            }));
+            updatedJobs.push(...resequenced);
+          });
+
+          const wcJobIds = new Set(updatedJobs.map((j) => j.id));
+          const remainingJobs = restored.filter((j) => !wcJobIds.has(j.id));
+
+          return [...updatedJobs, ...remainingJobs];
+        });
+
+        setSnackbar({
+          open: true,
+          message: 'จัดเรียงคิวอัตโนมัติสำเร็จ! คืนค่าการจัดตำแหน่งและเครื่องจักรเริ่มต้นตาม Excel ทุกเครื่องจักร',
+          severity: 'success',
+        });
+      } catch (error) {
+        setSnackbar({
+          open: true,
+          message: 'เกิดข้อผิดพลาด: ' + (error instanceof Error ? error.message : String(error)),
+          severity: 'error',
+        });
+      } finally {
+        setIsDefaultSettingProcessing(false);
+      }
+    }, 100);
+  }, [initialJobs, isDefaultSettingProcessing]);
+
+  const applyAutoWorkCenterAllocation = React.useCallback(() => {
+    if (isAllocatingWorkCenters) return;
+
+    const sourceJobs = jobs;
+    setIsAllocatingWorkCenters(true);
+    setAllocationSummary(null);
+    setSnackbar({
+      open: true,
+      message: 'กำลังทดลองจัด Work Order ลงเครื่อง 01, 03, 04 และ 05…',
+      severity: 'info',
+    });
+
+    window.setTimeout(() => {
+      try {
+        const { jobs: allocatedJobs, summary } = allocateWorkOrdersToWorkCenters(
+          sourceJobs,
+          AUTO_WORK_CENTER_IDS,
+        );
+        const savedChangeovers = summary.beforeChangeovers - summary.afterChangeovers;
+        pushToHistory();  // Auto-allocate affects all jobs
+        setJobs(allocatedJobs);
+        setAllocationSummary(summary);
+        setSelectedWorkCenter('ALL');
+        setSelectedJobIds(new Set());
+        setLastMovedJobIds([]);
+        setSnackbar({
+          open: true,
+          message: savedChangeovers > 0
+            ? `ทดลองจัด WC แล้ว: ลดการเปลี่ยน L/Q ได้ ${savedChangeovers} ครั้ง — ยังไม่บันทึกลง DB`
+            : `ทดลองจัด WC แล้ว: การเปลี่ยน L/Q ${summary.afterChangeovers} ครั้ง — ยังไม่บันทึกลง DB`,
+          severity: savedChangeovers > 0 ? 'success' : 'info',
+        });
+      } catch (error) {
+        setSnackbar({
+          open: true,
+          message: 'เกิดข้อผิดพลาดในการจัดเครื่องจักรอัตโนมัติ: ' + (error instanceof Error ? error.message : String(error)),
+          severity: 'error',
+        });
+      } finally {
+        setIsAllocatingWorkCenters(false);
+      }
+    }, 100);
+  }, [jobs, isAllocatingWorkCenters]);
 
   const saveSequence = React.useCallback(async (workCenter: string) => {
     setSavingWorkCenter(workCenter);
@@ -1226,6 +1354,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     ));
 
     setJobs(savedJobs);
+    setJobsHistory([]);
     setInitialJobs(savedJobs);
     setSelectedJobIds(new Set());
     setLastMovedJobIds([]);
@@ -1457,6 +1586,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
     if (draggedIds.length > 0) {
       markLastMovedJobs(draggedIds);
+      pushToHistory(draggedIds);
       setJobs((current) => {
         const draggedIdSet = new Set(draggedIds);
         const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
@@ -1478,13 +1608,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         return next;
       });
       showDropConfirmation(draggedIds, 'after');
+      triggerDropHighlight(draggedIds);
     }
 
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
     clearDraggingElements();
-  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll]);
+  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll, triggerDropHighlight]);
 
   const handleDropToProductGroup = React.useCallback((
     event: React.DragEvent<HTMLElement>,
@@ -1504,6 +1635,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
     if (draggedIds.length > 0) {
       markLastMovedJobs(draggedIds);
+      pushToHistory(draggedIds);
       setJobs((current) => {
         const draggedIdSet = new Set(draggedIds);
         const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
@@ -1548,13 +1680,14 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         return next;
       });
       showDropConfirmation(draggedIds, 'after');
+      triggerDropHighlight(draggedIds);
     }
 
     draggingJobIdRef.current = null;
     stopDragAutoScroll();
     clearDragClasses();
     clearDraggingElements();
-  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll]);
+  }, [clearDragClasses, clearDraggingElements, markLastMovedJobs, showDropConfirmation, stopDragAutoScroll, triggerDropHighlight]);
 
   const handleDragEnd = React.useCallback((event: React.DragEvent<HTMLElement>) => {
     draggingJobIdRef.current = null;
@@ -2290,9 +2423,12 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                     <PlanningActionButtons
                       isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
                       isSaving={savingAll || savingWorkCenter !== null}
+                      isAllocating={isAllocatingWorkCenters}
+                      isSequencing={isDefaultSettingProcessing}
                       onAutoSequence={() => {
                         applyAutoSequence(visibleWorkCenters.map((item) => item.arbpl));
                       }}
+                      onAutoAllocate={applyAutoWorkCenterAllocation}
                       onSave={() => {
                         if (deferredWorkCenter === 'ALL') {
                           void saveAllDirty();
@@ -2493,6 +2629,38 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
               );
             })()}
 
+            {allocationSummary && (
+              <Alert
+                severity="success"
+                variant="outlined"
+                sx={{
+                  mb: 2.5,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(46, 125, 50, 0.03)',
+                  borderColor: 'rgba(46, 125, 50, 0.25)',
+                  '& .MuiAlert-icon': { color: '#2e7d32' },
+                }}
+              >
+                <AlertTitle sx={{ fontWeight: 850, color: '#2e7d32', mb: 1, fontSize: '0.92rem' }}>
+                  ผลการจำลองการจัด Work Center อัตโนมัติ (ยังไม่ได้บันทึก)
+                </AlertTitle>
+                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
+                  ลดการเปลี่ยน L/Q จาก {formatNumber(allocationSummary.beforeChangeovers)} เหลือ {formatNumber(allocationSummary.afterChangeovers)} ครั้ง
+                  {' '}(ลดลง {formatNumber(Math.max(0, allocationSummary.beforeChangeovers - allocationSummary.afterChangeovers))} ครั้ง), ย้าย {formatNumber(allocationSummary.movedOrders)} Work Orders
+                </Typography>
+                <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+                  {allocationSummary.workCenters.map((item: any) => (
+                    <Chip
+                      key={item.workCenter}
+                      size="small"
+                      label={`${item.workCenter.slice(-2)}: ${item.orders} orders / ${formatNumber(item.hours)}h / ${item.changeovers} L/Q`}
+                      sx={{ fontSize: '0.72rem', fontWeight: 800, borderRadius: 1 }}
+                    />
+                  ))}
+                </Stack>
+              </Alert>
+            )}
+
             <Box
               sx={{
                 opacity: isWorkCenterPending || planningView !== deferredPlanningView ? 0.6 : 1,
@@ -2511,6 +2679,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   groupedJobs={groupedJobs}
                   dirtyWorkCenters={dirtyWorkCenters}
                   selectedJobIds={selectedJobIds}
+                  highlightedJobIds={highlightedJobIds}
+                  droppedJobIds={droppedJobIds}
                   lacquerColorMap={lacquerColorMap}
                   collapsedGroups={collapsedGroups}
                   onToggleGroup={toggleGroupCollapse}
@@ -2531,6 +2701,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   orderSequence={matrixOrderSequence}
                   externalRoutingJobs={externalRoutingJobs}
                   selectedJobIds={selectedJobIds}
+                  highlightedJobIds={highlightedJobIds}
+                  droppedJobIds={droppedJobIds}
                   lacquerColorMap={lacquerColorMap}
                   collapsedGroups={collapsedGroups}
                   onToggleGroup={toggleGroupCollapse}
@@ -2561,6 +2733,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           collapsedGroups={collapsedGroups}
                           selectedJobIds={selectedJobIds}
                           sequenceChanges={sequenceChanges}
+                          highlightedJobIds={highlightedJobIds}
+                          droppedJobIds={droppedJobIds}
                           onToggleSelect={handleToggleSelect}
                           onToggleSelectAllGroup={handleToggleSelectAllGroup}
                           onToggleCollapse={toggleGroupCollapse}
@@ -2586,14 +2760,46 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           </Stack>
         </Container>
 
-        {/* Floating Action Bar */}
         {hasDirtyChanges && showFloatingActionBar && (
           <PlanningActionBar
-            isSaving={savingAll || savingWorkCenter !== null}
+            isSaving={savingAll || savingWorkCenter !== null || isDefaultSettingProcessing}
             onReset={() => {
-              applyAutoSequence(visibleWorkCenters.map((item) => item.arbpl));
+              if (jobsHistory.length > 0) {
+                const historyEntry = jobsHistory[jobsHistory.length - 1];
+                const previousState = historyEntry.state;
+                const storedIds = historyEntry.affectedJobIds;
+
+                setJobsHistory((prev) => prev.slice(0, -1));
+                setJobs(previousState);
+
+                // Highlight only the specific jobs that were affected by the action
+                if (storedIds.length > 0) {
+                  const changedIds = new Set<number>(storedIds);
+                  setHighlightedJobIds(changedIds);
+                  window.setTimeout(() => {
+                    setHighlightedJobIds((prev) => {
+                      const next = new Set(prev);
+                      changedIds.forEach((id) => next.delete(id));
+                      return next;
+                    });
+                  }, 1000);
+                }
+
+                setSnackbar({
+                  open: true,
+                  message: 'ย้อนกลับการทำรายการล่าสุดเรียบร้อยแล้ว (Undo)',
+                  severity: 'info',
+                });
+              } else {
+                setJobs(initialJobs);
+                setSnackbar({
+                  open: true,
+                  message: 'คืนค่าเป็นแผนเริ่มต้นเรียบร้อยแล้ว (Undo ทั้งหมด)',
+                  severity: 'info',
+                });
+              }
             }}
-            resetLabel="DEFAULT SETTING"
+            resetLabel="UNDO"
             onSave={saveAllDirty}
           />
         )}

@@ -6,8 +6,11 @@ import { Button, Stack, CircularProgress } from '@mui/material';
 type PlanningActionButtonsProps = {
   isDirty: boolean;
   isSaving: boolean;
+  isAllocating: boolean;
+  isSequencing?: boolean;
   density?: 'default' | 'compact';
   onAutoSequence: () => void;
+  onAutoAllocate: () => void;
   onSave: () => void;
 };
 
@@ -29,8 +32,11 @@ const SaveIcon = () => (
 export default function PlanningActionButtons({
   isDirty,
   isSaving,
+  isAllocating,
+  isSequencing = false,
   density = 'default',
   onAutoSequence,
+  onAutoAllocate,
   onSave,
 }: PlanningActionButtonsProps) {
   const compact = density === 'compact';
@@ -59,7 +65,7 @@ export default function PlanningActionButtons({
         size="small"
         variant="outlined"
         onClick={onAutoSequence}
-        disabled={isSaving}
+        disabled={isSaving || isAllocating || isSequencing}
         sx={{
           ...baseButtonSx,
           color: '#475569',
@@ -71,15 +77,45 @@ export default function PlanningActionButtons({
           },
         }}
       >
-        <AutoSequenceIcon />
-        DEFAULT SETTING
+        {isSequencing ? (
+          <CircularProgress size={12} color="inherit" sx={{ mr: 0.75 }} />
+        ) : (
+          <AutoSequenceIcon />
+        )}
+        {isSequencing ? 'กำลังจัดลำดับ…' : 'DEFAULT SETTING'}
+      </Button>
+
+      {/* EXPERIMENTAL WORK CENTER ALLOCATION */}
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={onAutoAllocate}
+        disabled={isSaving || isAllocating}
+        sx={{
+          ...baseButtonSx,
+          color: '#0369a1',
+          borderColor: '#7dd3fc',
+          bgcolor: 'rgba(14, 165, 233, 0.04)',
+          '&:hover': {
+            borderColor: '#0284c7',
+            color: '#075985',
+            bgcolor: 'rgba(14, 165, 233, 0.09)',
+          },
+        }}
+      >
+        {isAllocating ? (
+          <CircularProgress size={12} color="inherit" sx={{ mr: 0.75 }} />
+        ) : (
+          <AutoSequenceIcon />
+        )}
+        {isAllocating ? 'กำลังคำนวณ…' : 'ทดลอง AUTO WC'}
       </Button>
 
       {/* SAVE */}
       <Button
         size="small"
         variant={isDirty ? 'contained' : 'outlined'}
-        disabled={isSaving}
+        disabled={isSaving || isAllocating}
         onClick={onSave}
         sx={{
           ...baseButtonSx,

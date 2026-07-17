@@ -48,6 +48,10 @@ export type PlanningJob = {
   confirmYield: number;
   confirmHold: number;
   confirmScrap: number;
+  excelSeqno?: number | null;
+  excelArbpl?: string | null;
+  excelStdate?: string | null;
+  excelFindate?: string | null;
 };
 
 export type WorkCenterSummary = {
@@ -146,6 +150,10 @@ function serializeJob(job: RawProductionJob): PlanningJob {
     confirmYield: job.confirmYield,
     confirmHold: job.confirmHold,
     confirmScrap: job.confirmScrap,
+    excelSeqno: (job as any).excelSeqno !== undefined && (job as any).excelSeqno !== null ? toNumber((job as any).excelSeqno) : null,
+    excelArbpl: (job as any).excelArbpl ?? null,
+    excelStdate: toDateString((job as any).excelStdate),
+    excelFindate: toDateString((job as any).excelFindate),
   };
 }
 

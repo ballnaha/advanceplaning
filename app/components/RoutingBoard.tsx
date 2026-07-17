@@ -27,6 +27,8 @@ type RoutingBoardProps = {
   groupedJobs: Record<string, PlanningJob[]>;
   dirtyWorkCenters: Map<string, boolean>;
   selectedJobIds: Set<number>;
+  highlightedJobIds?: Set<number>;
+  droppedJobIds?: Set<number>;
   lacquerColorMap: Map<string, LacquerColor>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (key: string) => void;
@@ -85,6 +87,7 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
   onDragLeaveJob,
   onDropOnJob,
   onDragEnd,
+  isHighlighted = false,
 }: {
   job: PlanningJob;
   index: number;
@@ -98,6 +101,7 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
   onDragLeaveJob: RoutingBoardProps['onDragLeaveJob'];
   onDropOnJob: RoutingBoardProps['onDropOnJob'];
   onDragEnd: RoutingBoardProps['onDragEnd'];
+  isHighlighted?: 'undo' | 'drop' | false;
 }) {
   const status = getStatusStyle(job.text1);
   const group = ZPG1D_GROUPS.find((item) => item.id === getQueueGroupId(job));
@@ -141,12 +145,20 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
         cursor: 'pointer',
         borderRadius: 2.5,
         border: '1px solid',
-        borderColor: selected ? '#818cf8' : 'rgba(15, 23, 42, 0.09)',
-        bgcolor: selected ? '#f5f7ff' : '#ffffff',
-        boxShadow: selected
-          ? '0 0 0 2px rgba(99, 102, 241, 0.1), 0 8px 20px rgba(15, 23, 42, 0.08)'
-          : '0 5px 16px rgba(15, 23, 42, 0.045)',
-        transition: 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease',
+        borderColor: isHighlighted ? (isHighlighted === 'undo' ? '#f43f5e' : '#06b6d4') : (selected ? '#818cf8' : 'rgba(15, 23, 42, 0.09)'),
+        bgcolor: isHighlighted === 'undo'
+          ? 'rgba(244, 63, 94, 0.2) !important'
+          : isHighlighted === 'drop'
+            ? 'rgba(6, 182, 212, 0.25) !important'
+            : (selected ? '#f5f7ff' : '#ffffff'),
+        boxShadow: isHighlighted
+          ? `0 0 0 2px ${isHighlighted === 'undo' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(6, 182, 212, 0.2)'}, 0 8px 20px rgba(15, 23, 42, 0.08)`
+          : (selected
+            ? '0 0 0 2px rgba(99, 102, 241, 0.1), 0 8px 20px rgba(15, 23, 42, 0.08)'
+            : '0 5px 16px rgba(15, 23, 42, 0.045)'),
+        transition: isHighlighted
+          ? 'none'
+          : 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease, background-color 1s ease',
         '&:hover': {
           borderColor: 'rgba(79, 70, 229, 0.34)',
           boxShadow: '0 10px 24px rgba(15, 23, 42, 0.09)',
@@ -338,6 +350,8 @@ export default function RoutingBoard({
   groupedJobs,
   dirtyWorkCenters,
   selectedJobIds,
+  highlightedJobIds,
+  droppedJobIds,
   lacquerColorMap,
   collapsedGroups,
   onToggleGroup,
@@ -595,6 +609,11 @@ export default function RoutingBoard({
                                   job={job}
                                   index={index}
                                   selected={selectedJobIds.has(job.id)}
+                                  isHighlighted={
+                                    highlightedJobIds?.has(job.id) ? 'undo'
+                                    : droppedJobIds?.has(job.id) ? 'drop'
+                                    : false
+                                  }
                                   lacquerColor={lacquerColorMap.get(getLacquerKey(job)) ?? fallbackLacquerColor}
                                   onToggleSelect={onToggleSelect}
                                   onOpen={setSelectedJob}

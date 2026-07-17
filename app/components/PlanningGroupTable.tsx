@@ -166,6 +166,7 @@ interface PlanningJobRowProps {
   globalIndex: number;
   lacquerColor: { bg: string; chipBg: string; text: string; border: string };
   isSelected: boolean;
+  isHighlighted?: 'undo' | 'drop' | false;
   onToggleSelect: (jobId: number) => void;
   isFirst: boolean;
   isLast: boolean;
@@ -189,6 +190,7 @@ const PlanningJobRow = React.memo(({
   globalIndex,
   lacquerColor,
   isSelected,
+  isHighlighted = false,
   onToggleSelect,
   isFirst,
   isLast,
@@ -220,10 +222,14 @@ const PlanningJobRow = React.memo(({
       onClick={() => onOpenDetails(job)}
       sx={{
         cursor: 'pointer',
-        transition: 'background-color 120ms ease, opacity 120ms ease, transform 120ms ease',
+        transition: isHighlighted ? 'none' : 'background-color 1s ease, opacity 120ms ease, transform 120ms ease',
         opacity: 1,
-        bgcolor: isSelected ? 'rgba(79, 70, 229, 0.05) !important' : 'transparent',
-        boxShadow: `inset 4px 0 0 ${lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
+        bgcolor: isHighlighted === 'undo'
+          ? 'rgba(244, 63, 94, 0.2) !important'
+          : isHighlighted === 'drop'
+            ? 'rgba(6, 182, 212, 0.25) !important'
+            : (isSelected ? 'rgba(79, 70, 229, 0.05) !important' : 'transparent'),
+        boxShadow: `inset 4px 0 0 ${isHighlighted === 'undo' ? '#f43f5e' : isHighlighted === 'drop' ? '#06b6d4' : lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
         '&:active': { cursor: 'grabbing' },
         '&:hover': { bgcolor: isSelected ? 'rgba(79, 70, 229, 0.08) !important' : 'rgba(15, 23, 42, 0.025)' },
         '&.dragging-row': { opacity: 0.45, transform: 'scale(0.985)', willChange: 'opacity, transform' },
@@ -233,14 +239,14 @@ const PlanningJobRow = React.memo(({
         '&.drop-confirm-row': {
           position: 'relative',
           animation: 'dropConfirmRow 1100ms ease-out',
-          bgcolor: 'rgba(5, 150, 105, 0.08)',
-          boxShadow: 'inset 4px 0 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+          bgcolor: 'rgba(6, 182, 212, 0.08)',
+          boxShadow: 'inset 4px 0 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
         },
         '&.drop-confirm-before': {
-          boxShadow: 'inset 4px 0 0 #059669, inset 0 3px 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 3px 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
         },
         '&.drop-confirm-after': {
-          boxShadow: 'inset 4px 0 0 #059669, inset 0 -3px 0 #059669, 0 12px 24px rgba(5, 150, 105, 0.12)',
+          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 -3px 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
         },
         '&.drop-confirm-row td:first-of-type': {
           position: 'relative',
@@ -253,7 +259,7 @@ const PlanningJobRow = React.memo(({
           zIndex: 3,
           height: 3,
           borderRadius: 999,
-          bgcolor: '#059669',
+          bgcolor: '#06b6d4',
           transform: 'translateY(-50%)',
           animation: 'dropPlaceLine 1100ms ease-out',
         },
@@ -267,12 +273,12 @@ const PlanningJobRow = React.memo(({
           px: 1,
           py: 0.25,
           borderRadius: 1,
-          bgcolor: '#059669',
+          bgcolor: '#06b6d4',
           color: '#ffffff',
           fontSize: '0.68rem',
           fontWeight: 800,
           whiteSpace: 'nowrap',
-          boxShadow: '0 8px 18px rgba(5, 150, 105, 0.16)',
+          boxShadow: '0 8px 18px rgba(6, 182, 212, 0.16)',
           transform: 'translateY(-50%)',
           animation: 'dropLabelOut 1100ms ease-out',
         },
@@ -562,6 +568,8 @@ export interface PlanningGroupTableProps {
   isCollapsed: boolean;
   lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
   selectedJobIds: Set<number>;
+  highlightedJobIds?: Set<number>;
+  droppedJobIds?: Set<number>;
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
   onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
@@ -604,6 +612,8 @@ const PlanningGroupTable = React.memo(({
   isCollapsed,
   lacquerColorMap,
   selectedJobIds,
+  highlightedJobIds,
+  droppedJobIds,
   onToggleSelect,
   onToggleSelectAllGroup,
   onDragStart,
@@ -761,6 +771,11 @@ const PlanningGroupTable = React.memo(({
                   onMoveUp={onMoveUp}
                   onMoveDown={onMoveDown}
                   onOpenDetails={openDetails}
+                  isHighlighted={
+                    highlightedJobIds?.has(job.id) ? 'undo'
+                    : droppedJobIds?.has(job.id) ? 'drop'
+                    : false
+                  }
                 />
               );
             })}
@@ -787,7 +802,9 @@ const PlanningGroupTable = React.memo(({
       nextProps.routingOperationsByOrder,
       prevProps.groupJobs,
     ) &&
-    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds
+    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds &&
+    prevProps.highlightedJobIds === nextProps.highlightedJobIds &&
+    prevProps.droppedJobIds === nextProps.droppedJobIds
   );
 });
 

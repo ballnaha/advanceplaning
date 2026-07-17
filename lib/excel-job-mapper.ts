@@ -76,5 +76,9 @@ export function rowToProductionJob(row: ExcelRow, dataRowIndex: number): Prisma.
     confirmYield: int(row.CONFIRM_YIELD),
     confirmHold: int(row.CONFIRM_HOLD),
     confirmScrap: int(row.CONFIRM_SCRAP),
+    excelSeqno: int(row.SEQNO),
+    excelArbpl: text(row.ARBPL) || 'UNKNOWN',
+    excelStdate: excelDate(row.STDATE),
+    excelFindate: excelDate(row.FINDATE),
   };
 }

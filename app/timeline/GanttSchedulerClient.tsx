@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   FormControl,
   IconButton,
   InputAdornment,
@@ -238,6 +239,7 @@ const GanttBarItem = React.memo(function GanttBarItem({
   isDragOver,
   dropPosition,
   lacquerColorMap,
+  isHighlighted = false,
 }: {
   job: PlanningJob;
   daysFromStart: number;
@@ -254,6 +256,7 @@ const GanttBarItem = React.memo(function GanttBarItem({
   isDragOver: boolean;
   dropPosition: 'before' | 'after' | null;
   lacquerColorMap: Map<string, LacquerColor>;
+  isHighlighted?: 'undo' | 'drop' | false;
 }) {
   const statusStyle = getStatusStyle(job.text1 || 'NOT START');
   const lacquerKey = getLacquerKey(job);
@@ -307,15 +310,23 @@ const GanttBarItem = React.memo(function GanttBarItem({
         height: 66,
         borderRadius: 2,
         color: statusStyle.color,
-        bgcolor: statusStyle.bg,
-        border: `1px solid ${statusStyle.border}`,
+        bgcolor: isHighlighted === 'undo'
+          ? 'rgba(244, 63, 94, 0.25) !important'
+          : isHighlighted === 'drop'
+            ? 'rgba(6, 182, 212, 0.25) !important'
+            : statusStyle.bg,
+        border: isHighlighted === 'undo'
+          ? '1.5px solid #f43f5e !important'
+          : isHighlighted === 'drop'
+            ? '1.5px solid #06b6d4 !important'
+            : `1px solid ${statusStyle.border}`,
         borderLeftWidth: isClippedLeft ? '3px dashed' : '1.5px solid',
         borderRightWidth: isClippedRight ? '3px dashed' : '1px solid',
-        boxShadow: isClippedLeft 
-          ? 'none' 
-          : 'inset 3.5px 0 0 ' + statusStyle.border + ', 0 3px 6px rgba(15,23,42,0.03)',
+        boxShadow: isClippedLeft
+          ? 'none'
+          : 'inset 3.5px 0 0 ' + (isHighlighted === 'undo' ? '#f43f5e' : isHighlighted === 'drop' ? '#06b6d4' : statusStyle.border) + ', 0 3px 6px rgba(15,23,42,0.03)',
         cursor: 'grab',
-        transition: 'border-color 150ms ease, box-shadow 150ms ease, filter 150ms ease',
+        transition: isHighlighted ? 'none' : 'background-color 1s ease, border-color 1s ease, box-shadow 150ms ease, filter 150ms ease',
         zIndex: 5,
         display: 'flex',
         flexDirection: 'column',
@@ -346,7 +357,7 @@ const GanttBarItem = React.memo(function GanttBarItem({
           }}
         />
       )}
-       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
         <Typography noWrap sx={{ fontSize: '0.84rem', fontWeight: 950, lineHeight: 1.1 }}>
           {job.aufnr}
         </Typography>
@@ -431,52 +442,115 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
   const [initialJobs, setInitialJobs] = React.useState(jobs);
   const [hasChanges, setHasChanges] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  const [isSandboxMode, setIsSandboxMode] = React.useState(false);
+  const [isDefaultSettingProcessing, setIsDefaultSettingProcessing] = React.useState(false);
+  const [localJobsHistory, setLocalJobsHistory] = React.useState<{ state: PlanningJob[]; affectedJobIds: number[] }[]>([]);
+  const [highlightedJobIds, setHighlightedJobIds] = React.useState<Set<number>>(new Set());
+  const [droppedJobIds, setDroppedJobIds] = React.useState<Set<number>>(new Set());
+
+  const localJobsRef = React.useRef(localJobs);
+  React.useEffect(() => {
+    localJobsRef.current = localJobs;
+  }, [localJobs]);
+
+  const pushToHistory = React.useCallback((affectedJobIds: number[] = []) => {
+    setLocalJobsHistory((prev) => [...prev, { state: localJobsRef.current, affectedJobIds }]);
+  }, []);
+
+  const triggerDropHighlight = React.useCallback((jobIds: number[]) => {
+    if (jobIds.length === 0) return;
+    const idsSet = new Set(jobIds);
+    setDroppedJobIds(idsSet);
+    window.setTimeout(() => {
+      setDroppedJobIds((prev) => {
+        const next = new Set(prev);
+        jobIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 1000);
+  }, []);
 
   const handleAutoSequence = React.useCallback(() => {
-    setLocalJobs((current) => {
-      // Group current jobs by Work Center
-      const byArbpl: Record<string, PlanningJob[]> = {};
-      current.forEach((job) => {
-        byArbpl[job.arbpl] ??= [];
-        byArbpl[job.arbpl].push(job);
-      });
+    if (isDefaultSettingProcessing) return;
 
-      const updatedJobs: PlanningJob[] = [];
-      Object.keys(byArbpl).forEach((wc) => {
-        const wcJobs = byArbpl[wc];
-        // Sort using the exact home page logic
-        const sorted = sortJobsWithZpg3dTransition(wcJobs);
-        // Assign sequential seqno 1, 2, 3...
-        const resequenced = sorted.map((job, idx) => ({
-          ...job,
-          seqno: idx + 1,
-        }));
-        updatedJobs.push(...resequenced);
-      });
-
-      const wcJobIds = new Set(updatedJobs.map((j) => j.id));
-      const remainingJobs = current.filter((j) => !wcJobIds.has(j.id));
-
-      const nextList = [...updatedJobs, ...remainingJobs];
-
-      const beforeCount = calculateChangeovers(current);
-      const afterCount = calculateChangeovers(nextList);
-      const savedCount = beforeCount - afterCount;
-
-      setSnackbar({
-        open: true,
-        message: savedCount > 0
-          ? `จัดเรียงคิวอัตโนมัติสำเร็จ! ลดการสลับสีเคลือบเหลือเพียง ${afterCount} ครั้ง (ลดลงถึง ${savedCount} ครั้ง! ⚡)`
-          : `จัดเรียงคิวอัตโนมัติสำเร็จ! ความต่อเนื่องกลุ่มสีเคลือบอยู่ที่ ${afterCount} ครั้ง`,
-        severity: 'success',
-      });
-
-      return nextList;
+    setIsDefaultSettingProcessing(true);
+    setSnackbar({
+      open: true,
+      message: 'กำลังจัดลำดับเริ่มต้นคิวงานตาม Excel...',
+      severity: 'info',
     });
 
-    setHasChanges(true);
-  }, []);
+    window.setTimeout(() => {
+      try {
+        pushToHistory();  // DEFAULT SETTING affects all jobs, highlight all
+        setLocalJobs((current) => {
+          // Restore WC and dates to the initial Excel database/uploaded values
+          const initialMap = new Map(initialJobs.map((j) => [j.id, j]));
+          const restored = current.map((job) => {
+            const init = initialMap.get(job.id);
+            if (init) {
+              return {
+                ...job,
+                arbpl: init.excelArbpl ?? init.arbpl,
+                stdate: init.excelStdate ?? init.stdate,
+                findate: init.excelFindate ?? init.findate,
+                seqno: init.excelSeqno ?? init.seqno,
+                queueGroup: null, // excel default has no custom steel group
+              };
+            }
+            return job;
+          });
+
+          // Group restored jobs by Work Center
+          const byArbpl: Record<string, PlanningJob[]> = {};
+          restored.forEach((job) => {
+            byArbpl[job.arbpl] ??= [];
+            byArbpl[job.arbpl].push(job);
+          });
+
+          const updatedJobs: PlanningJob[] = [];
+          Object.keys(byArbpl).forEach((wc) => {
+            const wcJobs = byArbpl[wc];
+            // Sort using the exact home page logic
+            const sorted = sortJobsWithZpg3dTransition(wcJobs);
+            // Assign sequential seqno 1, 2, 3...
+            const resequenced = sorted.map((job, idx) => ({
+              ...job,
+              seqno: idx + 1,
+            }));
+            updatedJobs.push(...resequenced);
+          });
+
+          const wcJobIds = new Set(updatedJobs.map((j) => j.id));
+          const remainingJobs = restored.filter((j) => !wcJobIds.has(j.id));
+
+          const nextList = [...updatedJobs, ...remainingJobs];
+
+          const beforeCount = calculateChangeovers(current);
+          const afterCount = calculateChangeovers(nextList);
+          const savedCount = beforeCount - afterCount;
+
+          setSnackbar({
+            open: true,
+            message: savedCount > 0
+              ? `จัดเรียงคิวอัตโนมัติสำเร็จ! ลดการสลับสีเคลือบเหลือเพียง ${afterCount} ครั้ง (ลดลงถึง ${savedCount} ครั้ง! ⚡)`
+              : `จัดเรียงคิวอัตโนมัติสำเร็จ! ความต่อเนื่องกลุ่มสีเคลือบอยู่ที่ ${afterCount} ครั้ง`,
+            severity: 'success',
+          });
+
+          return nextList;
+        });
+        setHasChanges(true);
+      } catch (error) {
+        setSnackbar({
+          open: true,
+          message: 'เกิดข้อผิดพลาด: ' + (error instanceof Error ? error.message : String(error)),
+          severity: 'error',
+        });
+      } finally {
+        setIsDefaultSettingProcessing(false);
+      }
+    }, 100);
+  }, [initialJobs, isDefaultSettingProcessing]);
 
   const [selectedJobForModal, setSelectedJobForModal] = React.useState<PlanningJob | null>(null);
   const [dragOverState, setDragOverState] = React.useState<{ id: number; position: 'before' | 'after' } | null>(null);
@@ -546,6 +620,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
     setLocalJobs(jobs);
     setInitialJobs(jobs);
     setHasChanges(false);
+    setLocalJobsHistory([]);
   }, [jobs]);
 
   const handleSnackbarClose = React.useCallback(() => {
@@ -553,13 +628,46 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
   }, []);
 
   const handleCancel = () => {
-    setLocalJobs(initialJobs);
-    setHasChanges(false);
-    setSnackbar({
-      open: true,
-      message: 'ล้างการจัดลำดับแกนต์แล้ว — คืนค่าจาก DB ล่าสุด',
-      severity: 'info',
-    });
+    if (localJobsHistory.length > 0) {
+      const historyEntry = localJobsHistory[localJobsHistory.length - 1];
+      const previousState = historyEntry.state;
+      const storedIds = historyEntry.affectedJobIds;
+
+      const newHistory = localJobsHistory.slice(0, -1);
+      setLocalJobsHistory(newHistory);
+      setLocalJobs(previousState);
+
+      // Highlight only the specific jobs that were affected by the action
+      if (storedIds.length > 0) {
+        const changedIds = new Set<number>(storedIds);
+        setHighlightedJobIds(changedIds);
+        window.setTimeout(() => {
+          setHighlightedJobIds((prev) => {
+            const next = new Set(prev);
+            changedIds.forEach((id) => next.delete(id));
+            return next;
+          });
+        }, 1000);
+      }
+
+      if (newHistory.length === 0) {
+        setHasChanges(false);
+      }
+
+      setSnackbar({
+        open: true,
+        message: 'ย้อนกลับการทำรายการล่าสุดเรียบร้อยแล้ว (Undo)',
+        severity: 'info',
+      });
+    } else {
+      setLocalJobs(initialJobs);
+      setHasChanges(false);
+      setSnackbar({
+        open: true,
+        message: 'คืนค่าเป็นแผนเริ่มต้นเรียบร้อยแล้ว (Undo ทั้งหมด)',
+        severity: 'info',
+      });
+    }
   };
 
   const handleSave = async () => {
@@ -610,6 +718,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
 
       setInitialJobs(localJobs);
       setHasChanges(false);
+      setLocalJobsHistory([]);
       setSnackbar({
         open: true,
         message: 'บันทึกเรียบร้อย!',
@@ -649,6 +758,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
   }, [localJobs]);
 
   const handleDropJob = React.useCallback((jobId: number, targetWorkCenter: string, targetDay: string) => {
+    pushToHistory([jobId]);
     setLocalJobs((current) => {
       const draggedJob = current.find((j) => j.id === jobId);
       if (!draggedJob) return current;
@@ -691,10 +801,12 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
         new Set([draggedJob.arbpl, targetWorkCenter]),
       );
     });
-  }, []);
+    triggerDropHighlight([jobId]);
+  }, [triggerDropHighlight]);
 
   const handleDropJobOnTarget = React.useCallback((draggedId: number, targetJob: PlanningJob, position: 'before' | 'after') => {
     setDragOverState(null);
+    pushToHistory([draggedId]);
     setLocalJobs((current) => {
       const draggedJob = current.find((j) => j.id === draggedId);
       if (!draggedJob) return current;
@@ -761,7 +873,8 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
         new Set([draggedJob.arbpl, targetWorkCenter]),
       );
     });
-  }, []);
+    triggerDropHighlight([draggedId]);
+  }, [triggerDropHighlight]);
 
   const capacityData = React.useMemo(() => {
     const map = new Map<string, number>();
@@ -837,6 +950,14 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
         };
       }).filter((item): item is NonNullable<typeof item> => item !== null);
 
+      // Calculate changeovers for this work center
+      let changeovers = 0;
+      for (let i = 0; i < wcJobs.length - 1; i++) {
+        if (getLacquerKey(wcJobs[i]) !== getLacquerKey(wcJobs[i + 1])) {
+          changeovers++;
+        }
+      }
+
       const isCollapsed = collapsedWCs[wc] || false;
       const maxTrackIndex = jobsWithPosition.reduce((max, item) => Math.max(max, item.trackIndex), -1);
       const totalTracks = Math.max(1, maxTrackIndex + 1);
@@ -848,6 +969,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
         jobsWithPosition,
         isCollapsed,
         laneHeight,
+        changeovers,
       };
     });
   }, [visibleWorkCenters, filteredJobs, collapsedWCs, windowStart, windowEnd]);
@@ -862,7 +984,21 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
               <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: '1.2rem' }}>
                 Gantt Capacity Scheduler
               </Typography>
-             
+              <Stack direction="row" spacing={0.75} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.75 }}>
+                <Chip
+                  icon={<span>🎨</span>}
+                  label={`สลับสี L/Q: ${currentChangeovers} ครั้ง`}
+                  sx={{
+                    color: '#c2410c',
+                    bgcolor: '#fff7ed',
+                    border: '1px solid #ffedd5',
+                    fontWeight: 900,
+                    fontSize: '0.74rem',
+                    height: 24,
+                    '& .MuiChip-label': { px: 1 }
+                  }}
+                />
+              </Stack>
             </Box>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap' }}>
@@ -946,40 +1082,27 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                 </Select>
               </FormControl>
 
-              <Tooltip
-                title={
-                  <Box sx={{ p: 1, maxWidth: 320 }}>
-                    <Typography sx={{ fontSize: '0.8rem', fontWeight: 900, mb: 0.5, color: '#ffffff' }}>
-                      สูตรตรรกะจัดคิวผลิตอัตโนมัติ (Production Sequence Logic):
-                    </Typography>
-                    <Typography sx={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.85)', lineHeight: 1.45 }}>
-                      เรียงตามกลุ่มเหล็ก วันที่เริ่มผลิต ขนาด สี/แลกเกอร์ วันส่งมอบ และลำดับคิวตั้งต้น
-                    </Typography>
-                  </Box>
-                }
-                arrow
-                placement="bottom"
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleAutoSequence}
+                disabled={saving || isDefaultSettingProcessing}
+                startIcon={isDefaultSettingProcessing && <CircularProgress size={12} color="inherit" />}
+                sx={{
+                  height: 38,
+                  px: 1.5,
+                  borderRadius: 1.5,
+                  borderColor: '#4f46e5',
+                  bgcolor: 'rgba(79, 70, 229, 0.04)',
+                  color: '#4f46e5',
+                  fontSize: '0.82rem',
+                  fontWeight: 900,
+                  textTransform: 'none',
+                  '&:hover': { bgcolor: 'rgba(79, 70, 229, 0.08)' },
+                }}
               >
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleAutoSequence}
-                  sx={{
-                    height: 38,
-                    px: 1.5,
-                    borderRadius: 1.5,
-                    borderColor: '#4f46e5',
-                    bgcolor: 'rgba(79, 70, 229, 0.04)',
-                    color: '#4f46e5',
-                    fontSize: '0.82rem',
-                    fontWeight: 900,
-                    textTransform: 'none',
-                    '&:hover': { bgcolor: 'rgba(79, 70, 229, 0.08)' },
-                  }}
-                >
-                  DEFAULT SETTING
-                </Button>
-              </Tooltip>
+                {isDefaultSettingProcessing ? 'กำลังจัดลำดับ...' : 'DEFAULT SETTING'}
+              </Button>
 
               <Tooltip title={allCollapsed ? 'ขยายทุกเครื่อง' : 'ยุบทุกเครื่อง'} arrow>
                 <IconButton
@@ -1007,196 +1130,13 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
           </Stack>
         </Paper>
 
-        {/* Sandbox Mode Alert Banner */}
-        {isSandboxMode && (
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              px: 2.5,
-              borderRadius: 3.5,
-              bgcolor: 'rgba(217, 119, 6, 0.04)',
-              border: '1.5px dashed #d97706',
-              display: 'flex',
-              flexDirection: { xs: 'column', md: 'row' },
-              alignItems: { xs: 'flex-start', md: 'center' },
-              justifyContent: 'space-between',
-              gap: 2,
-            }}
-          >
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Typography sx={{ fontSize: '1.4rem' }}>🧪</Typography>
-              <Box>
-                <Typography sx={{ color: '#d97706', fontWeight: 955, fontSize: '0.9rem' }}>
-                  ห้องทดลองจำลองแผนงาน (What-If Sandbox Mode)
-                </Typography>
-                <Typography sx={{ color: '#78350f', fontSize: '0.76rem', fontWeight: 700, mt: 0.25 }}>
-                  คุณสามารถจำลองการย้ายคำสั่งซื้อข้ามเครื่องจักร ข้ามวัน หรือกดจัดคิวผลิตอัตโนมัติตามความต่อเนื่อง เพื่อดูผลกระทบภาระกำลังผลิตได้โดยไม่กระทบข้อมูลจริง
-                </Typography>
-              </Box>
-            </Stack>
 
-            {/* Live KPI Dashboard inside Sandbox Banner */}
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: 'center', my: { xs: 1, md: 0 } }}>
-              {/* Changeover KPI */}
-              <Paper
-                elevation={0}
-                sx={{
-                  px: 1.5,
-                  py: 0.75,
-                  borderRadius: 2,
-                  bgcolor: '#ffffff',
-                  border: '1px solid',
-                  borderColor: currentChangeovers < initialChangeovers
-                    ? '#10b981'
-                    : currentChangeovers > initialChangeovers
-                      ? '#ef4444'
-                      : '#cbd5e1',
-                  boxShadow: '0 1px 3px rgba(15,23,42,0.03)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                }}
-              >
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 900, color: 'text.secondary' }}>
-                  ล้างสลับสี L/Q:
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: '0.84rem',
-                    fontWeight: 950,
-                    color: currentChangeovers < initialChangeovers
-                      ? '#10b981'
-                      : currentChangeovers > initialChangeovers
-                        ? '#ef4444'
-                        : '#0f172a',
-                  }}
-                >
-                  {currentChangeovers} ครั้ง
-                </Typography>
-                <Typography sx={{ fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
-                  {currentChangeovers < initialChangeovers && `(ลดลง ${initialChangeovers - currentChangeovers} ครั้ง! 🟢)`}
-                  {currentChangeovers > initialChangeovers && `(เพิ่มขึ้น ${currentChangeovers - initialChangeovers} ครั้ง 🔴)`}
-                  {currentChangeovers === initialChangeovers && `(เดิม ${initialChangeovers} ครั้ง)`}
-                </Typography>
-              </Paper>
-
-              {/* Overload KPI */}
-              <Paper
-                elevation={0}
-                sx={{
-                  px: 1.5,
-                  py: 0.75,
-                  borderRadius: 2,
-                  bgcolor: '#ffffff',
-                  border: '1px solid',
-                  borderColor: currentOverloads < initialOverloads
-                    ? '#10b981'
-                    : currentOverloads > initialOverloads
-                      ? '#f59e0b'
-                      : '#cbd5e1',
-                  boxShadow: '0 1px 3px rgba(15,23,42,0.03)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                }}
-              >
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 900, color: 'text.secondary' }}>
-                  โหลดเกินเกณฑ์ (Overloads):
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: '0.84rem',
-                    fontWeight: 950,
-                    color: currentOverloads < initialOverloads
-                      ? '#10b981'
-                      : currentOverloads > initialOverloads
-                        ? '#f59e0b'
-                        : '#0f172a',
-                  }}
-                >
-                  {currentOverloads} วัน
-                </Typography>
-                <Typography sx={{ fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
-                  {currentOverloads < initialOverloads && `(ลดลง ${initialOverloads - currentOverloads} วัน 🟢)`}
-                  {currentOverloads > initialOverloads && `(เพิ่มขึ้น ${currentOverloads - initialOverloads} วัน ⚠️)`}
-                  {currentOverloads === initialOverloads && `(เดิม ${initialOverloads} วัน)`}
-                </Typography>
-              </Paper>
-            </Stack>
-
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleAutoSequence}
-                sx={{
-                  fontWeight: 900,
-                  fontSize: '0.78rem',
-                  borderRadius: 1.5,
-                  bgcolor: '#d97706',
-                  color: '#ffffff',
-                  px: 1.5,
-                  py: 0.8,
-                  textTransform: 'none',
-                  boxShadow: '0 2px 4px rgba(217, 119, 6, 0.2)',
-                  '&:hover': { bgcolor: '#b45309' },
-                }}
-              >
-                DEFAULT SETTING
-              </Button>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleSave}
-                sx={{
-                  fontWeight: 900,
-                  fontSize: '0.78rem',
-                  borderRadius: 1.5,
-                  bgcolor: '#10b981',
-                  color: '#ffffff',
-                  px: 1.5,
-                  py: 0.8,
-                  textTransform: 'none',
-                  boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
-                  '&:hover': { bgcolor: '#059669' },
-                }}
-              >
-                💾 บันทึกและใช้แผนจริง
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  handleCancel();
-                  setIsSandboxMode(false);
-                }}
-                sx={{
-                  fontWeight: 900,
-                  fontSize: '0.78rem',
-                  borderRadius: 1.5,
-                  borderColor: 'rgba(15, 23, 42, 0.15)',
-                  color: '#475569',
-                  px: 1.5,
-                  py: 0.8,
-                  textTransform: 'none',
-                  '&:hover': {
-                    bgcolor: 'rgba(15, 23, 42, 0.04)',
-                    borderColor: 'rgba(15, 23, 42, 0.3)',
-                  }
-                }}
-              >
-                ❌ ยกเลิกและออกจาก Sandbox
-              </Button>
-            </Stack>
-          </Paper>
-        )}
 
         {/* Top Half: Capacity / Load Analytics Bar Charts */}
         <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, border: '1px solid rgba(15,23,42,0.06)', bgcolor: '#ffffff' }}>
           <Stack direction="row" spacing={1} sx={{ mb: 3, alignItems: 'center' }}>
             <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: '0.96rem', display: 'flex', alignItems: 'center', gap: 1 }}>
-              📊 วิเคราะห์กำลังการผลิตรวมรายวัน (Live Daily Capacity Load vs. 24 Hrs Limit)
+              วิเคราะห์กำลังการผลิตรวมของแต่ละเครื่องจักร
             </Typography>
           </Stack>
 
@@ -1390,7 +1330,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
               </Box>
 
               {/* Board lane rows */}
-              {lanesData.map(({ wc, wcJobs, jobsWithPosition, isCollapsed, laneHeight }) => {
+              {lanesData.map(({ wc, wcJobs, jobsWithPosition, isCollapsed, laneHeight, changeovers }) => {
 
                 return (
                   <Box
@@ -1431,9 +1371,14 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                       <Box>
                         <Typography sx={{ color: '#0f172a', fontSize: '0.94rem', fontWeight: 950 }}>WC {wc}</Typography>
                         {!isCollapsed && (
-                          <Typography sx={{ mt: 0.1, color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>
-                            {wcJobs.length} OP Scheduled
-                          </Typography>
+                          <>
+                            <Typography sx={{ mt: 0.1, color: '#64748b', fontSize: '0.68rem', fontWeight: 700 }}>
+                              {wcJobs.length} OP Scheduled
+                            </Typography>
+                            <Typography sx={{ mt: 0.1, color: '#c2410c', fontSize: '0.68rem', fontWeight: 800 }}>
+                              สลับสี L/Q: {changeovers} ครั้ง
+                            </Typography>
+                          </>
                         )}
                       </Box>
                       <Typography sx={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 900, ml: 1 }}>
@@ -1549,6 +1494,11 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                             isDragOver={dragOverState?.id === pos.job.id}
                             dropPosition={dragOverState?.id === pos.job.id ? dragOverState.position : null}
                             lacquerColorMap={lacquerColorMap}
+                            isHighlighted={
+                              highlightedJobIds.has(pos.job.id) ? 'undo'
+                              : droppedJobIds.has(pos.job.id) ? 'drop'
+                              : false
+                            }
                           />
                         );
                       })}
@@ -1564,8 +1514,9 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
       {/* Floating Save/Reset Action Bar */}
       {hasChanges && (
         <PlanningActionBar
-          isSaving={saving}
+          isSaving={saving || isDefaultSettingProcessing}
           onReset={handleCancel}
+          resetLabel="UNDO"
           onSave={handleSave}
         />
       )}

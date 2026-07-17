@@ -48,6 +48,10 @@ model ProductionJob {
   confirmYield       Int       @default(0)
   confirmHold        Int       @default(0)
   confirmScrap       Int       @default(0)
+  excelSeqno         Int?
+  excelArbpl         String?   @db.VarChar(32)
+  excelStdate        DateTime?
+  excelFindate       DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

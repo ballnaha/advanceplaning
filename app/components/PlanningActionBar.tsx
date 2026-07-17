@@ -2,20 +2,17 @@
 
 import * as React from 'react';
 import { Box, CircularProgress, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
-
-type PlanningActionBarProps = {
+type PlanningActionBarProps = {
   isSaving: boolean;
   onReset: () => void;
   onSave: () => void;
   resetLabel?: string;
 };
 
-const ResetIcon = () => (
+const UndoIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-    <path d="M16 3h5v5" />
-    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-    <path d="M8 21H3v-5" />
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
   </svg>
 );
 
@@ -139,11 +136,11 @@ export default function PlanningActionBar({
                   '&.Mui-disabled': { opacity: 0.5 }
                 }}
               >
-                <ResetIcon />
+                <UndoIcon />
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="บันทึกการเปลี่ยนแปลง" arrow>
+          <Tooltip title={isSaving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"} arrow>
             <span>
               <IconButton
                 size="small"
@@ -162,7 +159,7 @@ export default function PlanningActionBar({
                     transform: 'translateY(-1px)',
                     boxShadow: '0 6px 16px rgba(79, 70, 229, 0.4)',
                   },
-                  '&.Mui-disabled': { bgcolor: '#cbd5e1', color: '#ffffff' },
+                  '&.Mui-disabled': { bgcolor: 'rgba(79, 70, 229, 0.5)', color: '#ffffff' },
                 }}
               >
                 {isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}

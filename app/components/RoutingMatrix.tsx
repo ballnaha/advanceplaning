@@ -15,6 +15,8 @@ type RoutingMatrixProps = {
   orderSequence: string[];
   externalRoutingJobs: PlanningJob[];
   selectedJobIds: Set<number>;
+  highlightedJobIds?: Set<number>;
+  droppedJobIds?: Set<number>;
   lacquerColorMap: Map<string, LacquerColor>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (key: string) => void;
@@ -80,6 +82,7 @@ type MatrixOperationProps = {
   onDragLeaveJob: RoutingMatrixProps['onDragLeaveJob'];
   onDropOnJob: RoutingMatrixProps['onDropOnJob'];
   onDragEnd: RoutingMatrixProps['onDragEnd'];
+  isHighlighted?: 'undo' | 'drop' | false;
 };
 
 const MatrixOperation = React.memo(function MatrixOperation({
@@ -95,6 +98,7 @@ const MatrixOperation = React.memo(function MatrixOperation({
   onDragLeaveJob,
   onDropOnJob,
   onDragEnd,
+  isHighlighted = false,
 }: MatrixOperationProps) {
   const status = getStatusStyle(job.text1);
   const hasWhiteLacquer = isWhiteLacquer(job);
@@ -133,12 +137,22 @@ const MatrixOperation = React.memo(function MatrixOperation({
         p: 0.85,
         borderRadius: 1.5,
         border: '1px solid',
-        borderColor: selected ? '#818cf8' : hasWhiteLacquer ? '#cbd5e1' : 'rgba(15, 23, 42, 0.08)',
+        borderColor: isHighlighted
+          ? (isHighlighted === 'undo' ? '#f43f5e' : '#06b6d4')
+          : (selected ? '#818cf8' : hasWhiteLacquer ? '#cbd5e1' : 'rgba(15, 23, 42, 0.08)'),
         borderLeft: `4px solid ${hasWhiteLacquer ? '#ffffff' : lacquerColor.text}`,
-        bgcolor: selected ? '#f5f7ff' : '#ffffff',
+        bgcolor: isHighlighted === 'undo'
+          ? 'rgba(244, 63, 94, 0.2) !important'
+          : isHighlighted === 'drop'
+            ? 'rgba(6, 182, 212, 0.25) !important'
+            : (selected ? '#f5f7ff' : '#ffffff'),
         cursor: 'grab',
-        boxShadow: visibleCardShadow,
-        transition: 'opacity 160ms ease, transform 160ms cubic-bezier(0.2, 0, 0, 1), border-color 140ms ease, box-shadow 140ms ease',
+        boxShadow: isHighlighted
+          ? `0 0 0 2px ${isHighlighted === 'undo' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(6, 182, 212, 0.2)'}, 0 8px 20px rgba(15, 23, 42, 0.08)`
+          : visibleCardShadow,
+        transition: isHighlighted
+          ? 'none'
+          : 'opacity 160ms ease, transform 160ms cubic-bezier(0.2, 0, 0, 1), border-color 140ms ease, box-shadow 140ms ease, background-color 1s ease',
         '&:active': { cursor: 'grabbing' },
         '&:hover': { borderColor: '#6366f1', borderLeftColor: hasWhiteLacquer ? '#ffffff' : lacquerColor.text, boxShadow: hoverShadow },
         '&.dragging-row': { opacity: 0.42, transform: 'scale(0.985)', willChange: 'opacity, transform' },
@@ -284,13 +298,14 @@ const MatrixOperation = React.memo(function MatrixOperation({
     </Paper>
   );
 });
-
 function RoutingMatrix({
   workCenters,
   groupedJobs,
   orderSequence,
   externalRoutingJobs,
   selectedJobIds,
+  highlightedJobIds,
+  droppedJobIds,
   lacquerColorMap,
   collapsedGroups,
   onToggleGroup,
@@ -684,6 +699,11 @@ function RoutingMatrix({
                             onDragLeaveJob={onDragLeaveJob}
                             onDropOnJob={handleMatrixDropOnJob}
                             onDragEnd={handleMatrixDragEnd}
+                            isHighlighted={
+                              highlightedJobIds?.has(job.id) ? 'undo'
+                              : droppedJobIds?.has(job.id) ? 'drop'
+                              : false
+                            }
                           />
                         ))}
                         {cellJobs.length === 0 && (

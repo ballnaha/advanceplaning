@@ -51,6 +51,8 @@ interface WorkCenterCardProps {
   collapsedGroups: Record<string, boolean>;
   selectedJobIds: Set<number>;
   sequenceChanges: Map<number, SequenceChange>;
+  highlightedJobIds?: Set<number>;
+  droppedJobIds?: Set<number>;
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
   onToggleCollapse: (key: string) => void;
@@ -92,6 +94,8 @@ const WorkCenterCard = React.memo(({
   collapsedGroups,
   selectedJobIds,
   sequenceChanges,
+  highlightedJobIds,
+  droppedJobIds,
   onToggleSelect,
   onToggleSelectAllGroup,
   onToggleCollapse,
@@ -291,6 +295,8 @@ const WorkCenterCard = React.memo(({
               isCollapsed={isCollapsed}
               lacquerColorMap={lacquerColorMap}
               selectedJobIds={selectedJobIds}
+              highlightedJobIds={highlightedJobIds}
+              droppedJobIds={droppedJobIds}
               onToggleSelect={onToggleSelect}
               onToggleSelectAllGroup={onToggleSelectAllGroup}
               onDragStart={onDragStart}
@@ -340,7 +346,9 @@ const WorkCenterCard = React.memo(({
       nextProps.routingOperationsByOrder,
       prevProps.group,
     ) &&
-    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds
+    prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds &&
+    prevProps.highlightedJobIds === nextProps.highlightedJobIds &&
+    prevProps.droppedJobIds === nextProps.droppedJobIds
   );
 });
 
