@@ -19,7 +19,7 @@ import {
 import { ArrowDown2, ArrowUp2, HambergerMenu } from 'iconsax-react';
 import { cleanZpg2d } from '@/lib/zpg1d-helpers';
 import type { PlanningJob } from '@/lib/planning';
-import JobDetailDialog from './JobDetailDialog';
+import JobDetailDialog, { type QuickMoveHandler } from './JobDetailDialog';
 
 const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
@@ -113,6 +113,17 @@ function RoutingTrail({
         {operations.map((operation, index) => {
           const isExternal = externalRoutingJobIds.has(operation.id);
           const isCurrent = operation.id === currentJobId;
+          const operationStatus = operation.text1?.trim().toUpperCase();
+          const isDone = operationStatus === 'DONE';
+          const isStarted = operationStatus === 'START';
+          const isWaiting = operationStatus === 'WAIT';
+          const statusStyle = isDone
+            ? { color: '#047857', bgcolor: '#ecfdf5', border: '#6ee7b7' }
+            : isStarted
+              ? { color: '#0369a1', bgcolor: '#f0f9ff', border: '#7dd3fc' }
+              : isWaiting
+                ? { color: '#854d0e', bgcolor: '#fef9c3', border: '#eab308' }
+                : { color: '#475569', bgcolor: '#f8fafc', border: '#e2e8f0' };
           return (
             <React.Fragment key={operation.id}>
               {index > 0 && (
@@ -132,11 +143,12 @@ function RoutingTrail({
                     gap: 0.4,
                     px: 0.65,
                     py: 0.3,
-                    color: isExternal ? '#92400e' : isCurrent ? '#4338ca' : '#475569',
-                    bgcolor: isExternal ? '#fffbeb' : isCurrent ? '#eef2ff' : '#f8fafc',
+                    color: statusStyle.color,
+                    bgcolor: statusStyle.bgcolor,
                     border: '1px solid',
                     borderStyle: isExternal ? 'dashed' : 'solid',
-                    borderColor: isExternal ? '#f59e0b' : isCurrent ? '#a5b4fc' : '#e2e8f0',
+                    borderColor: statusStyle.border,
+                    boxShadow: isCurrent ? '0 0 0 2px rgba(79, 70, 229, 0.22)' : 'none',
                     borderRadius: 1,
                     fontSize: '0.64rem',
                     lineHeight: 1.1,
@@ -147,7 +159,7 @@ function RoutingTrail({
                 >
                   OP {operation.vornr || '-'}
                   {isExternal && (
-                    <Box component="span" sx={{ color: '#b45309', fontSize: '0.58rem', fontWeight: 950 }}>
+                    <Box component="span" sx={{ color: statusStyle.color, fontSize: '0.58rem', fontWeight: 950 }}>
                       · WC {operation.arbpl}
                     </Box>
                   )}
@@ -208,6 +220,13 @@ const PlanningJobRow = React.memo(({
   onMoveDown,
   onOpenDetails,
 }: PlanningJobRowProps) => {
+  const jobStatus = job.text1?.trim().toUpperCase();
+  const rowAccentColor = isHighlighted === 'undo'
+    ? '#f43f5e'
+    : isHighlighted === 'drop'
+      ? '#06b6d4'
+      : lacquerColor.text;
+
   return (
     <TableRow
       hover
@@ -229,7 +248,7 @@ const PlanningJobRow = React.memo(({
           : isHighlighted === 'drop'
             ? 'rgba(6, 182, 212, 0.25) !important'
             : (isSelected ? 'rgba(79, 70, 229, 0.05) !important' : 'transparent'),
-        boxShadow: `inset 4px 0 0 ${isHighlighted === 'undo' ? '#f43f5e' : isHighlighted === 'drop' ? '#06b6d4' : lacquerColor.text}, 0 0 0 rgba(0,0,0,0)`,
+        boxShadow: 'none',
         '&:active': { cursor: 'grabbing' },
         '&:hover': { bgcolor: isSelected ? 'rgba(79, 70, 229, 0.08) !important' : 'rgba(15, 23, 42, 0.025)' },
         '&.dragging-row': { opacity: 0.45, transform: 'scale(0.985)', willChange: 'opacity, transform' },
@@ -238,18 +257,20 @@ const PlanningJobRow = React.memo(({
         },
         '&.drop-confirm-row': {
           position: 'relative',
-          animation: 'dropConfirmRow 1100ms ease-out',
           bgcolor: 'rgba(6, 182, 212, 0.08)',
-          boxShadow: 'inset 4px 0 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
+          boxShadow: 'inset 4px 0 0 #06b6d4',
         },
         '&.drop-confirm-before': {
-          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 3px 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
+          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 3px 0 #06b6d4',
         },
         '&.drop-confirm-after': {
-          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 -3px 0 #06b6d4, 0 12px 24px rgba(6, 182, 212, 0.12)',
+          boxShadow: 'inset 4px 0 0 #06b6d4, inset 0 -3px 0 #06b6d4',
         },
         '&.drop-confirm-row td:first-of-type': {
           position: 'relative',
+          zIndex: 12,
+          overflow: 'visible',
+          borderLeftColor: '#06b6d4',
         },
         '&.drop-confirm-row td:first-of-type::before': {
           content: '""',
@@ -261,15 +282,15 @@ const PlanningJobRow = React.memo(({
           borderRadius: 999,
           bgcolor: '#06b6d4',
           transform: 'translateY(-50%)',
-          animation: 'dropPlaceLine 1100ms ease-out',
+          animation: 'dropPlaceLine 720ms ease-out',
         },
         '&.drop-confirm-before td:first-of-type::before': { top: 0 },
         '&.drop-confirm-after td:first-of-type::before': { top: '100%' },
         '&.drop-confirm-row td:first-of-type::after': {
           content: '"เพิ่งวางตรงนี้"',
           position: 'absolute',
-          left: 10,
-          zIndex: 3,
+          left: 'calc(100% + 8px)',
+          zIndex: 20,
           px: 1,
           py: 0.25,
           borderRadius: 1,
@@ -279,11 +300,11 @@ const PlanningJobRow = React.memo(({
           fontWeight: 800,
           whiteSpace: 'nowrap',
           boxShadow: '0 8px 18px rgba(6, 182, 212, 0.16)',
-          transform: 'translateY(-50%)',
-          animation: 'dropLabelOut 1100ms ease-out',
+          pointerEvents: 'none',
+          animation: 'dropLabelOut 720ms ease-out',
         },
-        '&.drop-confirm-before td:first-of-type::after': { top: 0 },
-        '&.drop-confirm-after td:first-of-type::after': { top: '100%' },
+        '&.drop-confirm-before td:first-of-type::after': { top: 5 },
+        '&.drop-confirm-after td:first-of-type::after': { bottom: 5 },
         '&.drop-target-row': {
           bgcolor: 'rgba(79, 70, 229, 0.055)',
           boxShadow: 'inset 4px 0 0 #4f46e5',
@@ -301,11 +322,19 @@ const PlanningJobRow = React.memo(({
           transition: 'border-color 160ms ease, background-color 160ms ease',
           verticalAlign: 'middle',
         },
+        '& td:first-of-type': {
+          borderLeft: `4px solid ${rowAccentColor}`,
+        },
         '&.drop-target-row td': { position: 'relative' },
+        '&.drop-target-row td:first-of-type': {
+          zIndex: 12,
+          overflow: 'visible',
+          borderLeftColor: '#4f46e5',
+        },
         '&.drop-before-row td:first-of-type::before, &.drop-after-row td:first-of-type::before': {
           position: 'absolute',
-          left: 8,
-          zIndex: 3,
+          left: 'calc(100% + 8px)',
+          zIndex: 20,
           px: 1,
           py: 0.25,
           borderRadius: 1,
@@ -314,17 +343,17 @@ const PlanningJobRow = React.memo(({
           fontWeight: 800,
           whiteSpace: 'nowrap',
           boxShadow: '0 8px 18px rgba(15, 23, 42, 0.12)',
-          transform: 'translateY(-50%)',
+          pointerEvents: 'none',
           animation: 'dropHintIn 140ms ease-out',
         },
         '&.drop-before-row td:first-of-type::before': {
           content: '"แทรกก่อนแถวนี้"',
-          top: 0,
+          top: 5,
           bgcolor: '#4f46e5',
         },
         '&.drop-after-row td:first-of-type::before': {
           content: '"วางต่อท้ายแถวนี้"',
-          top: '100%',
+          bottom: 5,
           bgcolor: '#0891b2',
         },
       }}
@@ -447,11 +476,9 @@ const PlanningJobRow = React.memo(({
         <Chip
           size="small"
           color={
-            job.text1?.toUpperCase() === 'WAIT'
-              ? 'warning'
-              : job.text1?.toUpperCase() === 'START'
+            jobStatus === 'START'
               ? 'info'
-              : job.text1?.toUpperCase() === 'DONE'
+              : jobStatus === 'DONE'
               ? 'success'
               : 'default'
           }
@@ -461,6 +488,11 @@ const PlanningJobRow = React.memo(({
             fontSize: '0.72rem',
             fontWeight: 900,
             borderRadius: 1.5,
+            ...(jobStatus === 'WAIT' && {
+              color: '#854d0e',
+              bgcolor: '#fef9c3',
+              border: '1px solid #eab308',
+            }),
           }}
         />
       </TableCell>
@@ -565,11 +597,12 @@ export interface PlanningGroupTableProps {
   externalRoutingJobIds: Set<number>;
   groupLabel: string;
   workCenter: string;
-  isCollapsed: boolean;
   lacquerColorMap: Map<string, { bg: string; chipBg: string; text: string; border: string }>;
   selectedJobIds: Set<number>;
   highlightedJobIds?: Set<number>;
   droppedJobIds?: Set<number>;
+  onQuickMove: QuickMoveHandler;
+  workCenters: string[];
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
   onDragStart: (event: React.DragEvent<HTMLTableRowElement>, jobId: number) => void;
@@ -602,6 +635,14 @@ function routingOperationsEqualForJobs(
   return true;
 }
 
+function highlightedJobsEqual(
+  previous: Set<number> | undefined,
+  next: Set<number> | undefined,
+  jobs: PlanningJob[],
+) {
+  return jobs.every((job) => previous?.has(job.id) === next?.has(job.id));
+}
+
 const PlanningGroupTable = React.memo(({
   groupJobs,
   group,
@@ -609,11 +650,12 @@ const PlanningGroupTable = React.memo(({
   externalRoutingJobIds,
   groupLabel,
   workCenter,
-  isCollapsed,
   lacquerColorMap,
   selectedJobIds,
   highlightedJobIds,
   droppedJobIds,
+  onQuickMove,
+  workCenters,
   onToggleSelect,
   onToggleSelectAllGroup,
   onDragStart,
@@ -663,7 +705,6 @@ const PlanningGroupTable = React.memo(({
     };
   }, []);
 
-  if (isCollapsed) return null;
   if (groupJobs.length === 0) {
     return (
       <Box
@@ -717,6 +758,8 @@ const PlanningGroupTable = React.memo(({
           border: '1px solid rgba(15, 23, 42, 0.06)',
           borderRadius: 1.5,
           overflow: 'visible',
+          contentVisibility: 'auto',
+          containIntrinsicSize: `auto ${Math.max(120, groupJobs.length * 76 + 44)}px`,
         }}
       >
         <Table stickyHeader size="small" sx={{ tableLayout: 'fixed' }}>
@@ -788,12 +831,13 @@ const PlanningGroupTable = React.memo(({
         job={currentSelectedJob}
         lacquerColorMap={lacquerColorMap}
         onClose={closeDetails}
+        onQuickMove={onQuickMove}
+        workCenters={workCenters}
       />
     </>
   );
 }, (prevProps, nextProps) => {
   return (
-    prevProps.isCollapsed === nextProps.isCollapsed &&
     prevProps.groupJobs.length === nextProps.groupJobs.length &&
     prevProps.groupJobs.every((job, i) => job === nextProps.groupJobs[i]) &&
     prevProps.groupJobs.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id)) &&
@@ -803,8 +847,8 @@ const PlanningGroupTable = React.memo(({
       prevProps.groupJobs,
     ) &&
     prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds &&
-    prevProps.highlightedJobIds === nextProps.highlightedJobIds &&
-    prevProps.droppedJobIds === nextProps.droppedJobIds
+    highlightedJobsEqual(prevProps.highlightedJobIds, nextProps.highlightedJobIds, prevProps.groupJobs) &&
+    highlightedJobsEqual(prevProps.droppedJobIds, nextProps.droppedJobIds, prevProps.groupJobs)
   );
 });
 

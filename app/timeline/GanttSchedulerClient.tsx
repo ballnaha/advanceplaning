@@ -30,6 +30,13 @@ import {
 import type { PlanningJob } from '@/lib/planning';
 import JobDetailDialog from '../components/JobDetailDialog';
 import NotificationSnackbar from '../components/NotificationSnackbar';
+import { isFinishDateWithinWarningWindow } from '../components/FinishDateWarning';
+import { movePlanningJobs } from '@/lib/planning-move';
+import {
+  planningJobsStateEqual,
+  undoPlanningHistory,
+  type PlanningHistoryEntry,
+} from '@/lib/planning-history';
 
 type Props = {
   initialDate: string;
@@ -40,9 +47,42 @@ type Props = {
 
 const DAY_COUNT = 7;
 const MACHINE_CAPACITY_LIMIT = 24.0;
+const GANTT_CARD_HEIGHT = 98;
+const GANTT_TRACK_PITCH = 108;
+const ACTIVE_STATUS_OPTIONS = ['NOT START', 'START', 'WAIT'] as const;
 const numberFormatter = new Intl.NumberFormat('th-TH');
 const dayFormatter = new Intl.DateTimeFormat('th-TH', { weekday: 'short', day: '2-digit', month: 'short' });
 const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+const ExcelIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a" />
+    <text x="12" y="16" textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold" fontFamily="Arial, sans-serif">XLS</text>
+  </svg>
+);
+
+const WORK_CENTER_BAR_COLORS: Record<string, string> = {
+  '111001': 'linear-gradient(180deg, #315aa8 0%, #1e3a8a 100%)',
+  '111002': 'linear-gradient(180deg, #1595a7 0%, #0e7490 100%)',
+  '111003': 'linear-gradient(180deg, #805ad5 0%, #6d28d9 100%)',
+  '111004': 'linear-gradient(180deg, #a8a29e 0%, #78716c 100%)',
+  '111005': 'linear-gradient(180deg, #64748b 0%, #334155 100%)',
+};
+const FALLBACK_WORK_CENTER_BAR_COLORS = [
+  'linear-gradient(180deg, #315aa8 0%, #1e3a8a 100%)',
+  'linear-gradient(180deg, #1595a7 0%, #0e7490 100%)',
+  'linear-gradient(180deg, #805ad5 0%, #6d28d9 100%)',
+  'linear-gradient(180deg, #a8a29e 0%, #78716c 100%)',
+  'linear-gradient(180deg, #64748b 0%, #334155 100%)',
+];
+
+function getWorkCenterBarColor(workCenter: string) {
+  const configuredColor = WORK_CENTER_BAR_COLORS[workCenter];
+  if (configuredColor) return configuredColor;
+
+  const hash = Array.from(workCenter).reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  return FALLBACK_WORK_CENTER_BAR_COLORS[hash % FALLBACK_WORK_CENTER_BAR_COLORS.length];
+}
 
 function formatDate(value: string | null) {
   return value ? dateFormatter.format(new Date(`${value}T00:00:00`)) : '-';
@@ -147,11 +187,38 @@ function calculateChangeovers(jobs: PlanningJob[]) {
   return totalCount;
 }
 
+function getProductionDurationDays(job: PlanningJob) {
+  const configuredDays = job.prdday > 0 ? job.prdday : job.opdays;
+  return Math.max(1, Math.ceil(configuredDays || 1));
+}
+
+function getScheduledFinishDate(job: PlanningJob, startDate = job.stdate) {
+  if (!startDate) return null;
+  return addDays(startDate, getProductionDurationDays(job) - 1);
+}
+
+function getMovedFinishDate(
+  job: PlanningJob,
+  targetStartDate: string,
+  targetFinishDate?: string,
+) {
+  if (targetFinishDate) return targetFinishDate;
+
+  if (!job.stdate || !job.findate) {
+    return getScheduledFinishDate(job, targetStartDate);
+  }
+
+  const movedDays = Math.round(
+    (parseIsoDate(targetStartDate).getTime() - parseIsoDate(job.stdate).getTime()) / 86_400_000,
+  );
+  return addDays(job.findate, movedDays);
+}
+
 function countOverloadDays(jobs: PlanningJob[]) {
   const map = new Map<string, number>();
   jobs.forEach((job) => {
-    if (job.stdate && job.findate && job.optime > 0) {
-      const durationDays = daysBetween(job.stdate, job.findate) + 1;
+    if (job.stdate && job.optime > 0) {
+      const durationDays = getProductionDurationDays(job);
       const hoursPerDay = job.optime / durationDays;
 
       for (let i = 0; i < durationDays; i++) {
@@ -169,34 +236,6 @@ function countOverloadDays(jobs: PlanningJob[]) {
     }
   });
   return count;
-}
-
-function daysBetween(startDate: string, finishDate: string) {
-  const start = parseIsoDate(startDate).getTime();
-  const finish = parseIsoDate(finishDate).getTime();
-  return Math.max(0, Math.round((finish - start) / 86400000));
-}
-
-function resequenceWorkCentersBySchedule(jobs: PlanningJob[], workCenters: Set<string>) {
-  const sequenceById = new Map<number, number>();
-
-  for (const workCenter of workCenters) {
-    const scheduledJobs = jobs
-      .filter((job) => job.arbpl === workCenter)
-      .sort((a, b) =>
-        (a.stdate || '').localeCompare(b.stdate || '') ||
-        a.seqno - b.seqno ||
-        a.id - b.id
-      );
-    scheduledJobs
-      .forEach((job, index) => sequenceById.set(job.id, index + 1));
-  }
-
-  return jobs.map((job) => (
-    sequenceById.has(job.id)
-      ? { ...job, seqno: sequenceById.get(job.id)! }
-      : job
-  ));
 }
 
 function calculateGanttPosition(jobStDate: string, jobFinDate: string, wStart: string, wEnd: string) {
@@ -261,7 +300,9 @@ const GanttBarItem = React.memo(function GanttBarItem({
   const statusStyle = getStatusStyle(job.text1 || 'NOT START');
   const lacquerKey = getLacquerKey(job);
   const lacquerColor = lacquerColorMap.get(lacquerKey) || fallbackLacquerColor;
-  const fullDuration = daysBetween(job.stdate || '', job.findate || '') + 1;
+  const scheduledFinishDate = getScheduledFinishDate(job);
+  const isLate = Boolean(scheduledFinishDate && job.findate && scheduledFinishDate > job.findate);
+  const isDueSoon = isFinishDateWithinWarningWindow(job.findate);
 
   const handleDragStart = (event: React.DragEvent<HTMLElement>) => {
     event.dataTransfer.setData('text/plain', String(job.id));
@@ -306,8 +347,8 @@ const GanttBarItem = React.memo(function GanttBarItem({
         left: `${leftPercent}%`,
         width: `calc(${widthPercent}% - 8px)`,
         mx: '4px',
-        top: trackIndex * 76 + 10,
-        height: 66,
+        top: trackIndex * GANTT_TRACK_PITCH + 10,
+        height: GANTT_CARD_HEIGHT,
         borderRadius: 2,
         color: statusStyle.color,
         bgcolor: isHighlighted === 'undo'
@@ -414,7 +455,7 @@ const GanttBarItem = React.memo(function GanttBarItem({
           </Typography>
         )}
         {job.zpg2d && (
-          <Typography noWrap sx={{ fontSize: '0.66rem', fontWeight: 800, color: 'text.secondary' }}>
+          <Typography noWrap sx={{ minWidth: 0, fontSize: '0.66rem', fontWeight: 800, color: 'text.secondary' }}>
             {cleanZpg2d(job.zpg2d)}
           </Typography>
         )}
@@ -425,9 +466,62 @@ const GanttBarItem = React.memo(function GanttBarItem({
           {job.zptkx || job.ltxa1 || 'คำสั่งผลิต'}
         </Typography>
         <Typography sx={{ fontSize: '0.72rem', fontWeight: 900, color: 'text.primary', ml: 1 }}>
-          {job.optime > 0 ? `${numberFormatter.format(job.optime)} ชม.` : '0 ชม.'}
+          QTY {numberFormatter.format(job.mgvrg)}
         </Typography>
       </Stack>
+
+      <Box sx={{ display: 'flex', mt: 0.3, width: '100%' }}>
+        <Typography
+          sx={{
+            px: 0.65,
+            py: 0.1,
+            borderRadius: '5px',
+            border: `1px solid ${lacquerColor.border}`,
+            bgcolor: lacquerColor.chipBg,
+            color: lacquerColor.text,
+            fontSize: '0.67rem',
+            fontWeight: 950,
+            lineHeight: 1.25,
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+          }}
+        >
+          {job.zlmat || '-'}
+        </Typography>
+      </Box>
+
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.3, width: '100%' }}>
+        <Typography
+          noWrap
+          sx={{
+            flexShrink: 0,
+            px: 0.65,
+            py: 0.1,
+            borderRadius: '5px',
+            border: isLate
+              ? '1px solid #b91c1c'
+              : isDueSoon
+              ? '1px solid #b45309'
+              : '1px solid rgba(100, 116, 139, 0.3)',
+            bgcolor: isLate
+              ? '#dc2626'
+              : isDueSoon
+              ? '#d97706'
+              : 'rgba(255, 255, 255, 0.5)',
+            color: isLate || isDueSoon ? '#ffffff' : '#475569',
+            fontSize: '0.67rem',
+            fontWeight: isLate || isDueSoon ? 950 : 850,
+            lineHeight: 1.25,
+            boxShadow: isLate
+              ? '0 2px 5px rgba(185, 28, 28, 0.4)'
+              : isDueSoon
+                ? '0 2px 5px rgba(146, 64, 14, 0.35)'
+                : 'none',
+          }}
+        >
+          {formatDate(job.findate)}
+        </Typography>
+      </Box>
     </Box>
   );
 });
@@ -435,15 +529,16 @@ const GanttBarItem = React.memo(function GanttBarItem({
 export default function GanttSchedulerClient({ initialDate, jobs, workCenters, generatedAt }: Props) {
   const [windowStart, setWindowStart] = React.useState(() => startOfMondayWeek(initialDate));
   const [orderSearch, setOrderSearch] = React.useState('');
-  const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>(['NOT START', 'START', 'WAIT', 'DONE']);
+  const [selectedStatuses, setSelectedStatuses] = React.useState<string[]>(() => [...ACTIVE_STATUS_OPTIONS]);
   const [selectedWorkCenter, setSelectedWorkCenter] = React.useState('ALL');
 
   const [localJobs, setLocalJobs] = React.useState(jobs);
   const [initialJobs, setInitialJobs] = React.useState(jobs);
   const [hasChanges, setHasChanges] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
   const [isDefaultSettingProcessing, setIsDefaultSettingProcessing] = React.useState(false);
-  const [localJobsHistory, setLocalJobsHistory] = React.useState<{ state: PlanningJob[]; affectedJobIds: number[] }[]>([]);
+  const [localJobsHistory, setLocalJobsHistory] = React.useState<PlanningHistoryEntry[]>([]);
   const [highlightedJobIds, setHighlightedJobIds] = React.useState<Set<number>>(new Set());
   const [droppedJobIds, setDroppedJobIds] = React.useState<Set<number>>(new Set());
 
@@ -617,29 +712,27 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
   });
 
   React.useEffect(() => {
+    localJobsRef.current = jobs;
     setLocalJobs(jobs);
     setInitialJobs(jobs);
     setHasChanges(false);
     setLocalJobsHistory([]);
   }, [jobs]);
 
-  const handleSnackbarClose = React.useCallback(() => {
-    setSnackbar((prev) => ({ ...prev, open: false }));
+  const handleSnackbarClose = React.useCallback((message: string) => {
+    setSnackbar((prev) => (
+      prev.message === message ? { ...prev, open: false } : prev
+    ));
   }, []);
 
   const handleCancel = () => {
-    if (localJobsHistory.length > 0) {
-      const historyEntry = localJobsHistory[localJobsHistory.length - 1];
-      const previousState = historyEntry.state;
-      const storedIds = historyEntry.affectedJobIds;
+    const undoResult = undoPlanningHistory(localJobsRef.current, initialJobs, localJobsHistory);
+    setLocalJobsHistory(undoResult.history);
+    localJobsRef.current = undoResult.jobs;
+    setLocalJobs(undoResult.jobs);
 
-      const newHistory = localJobsHistory.slice(0, -1);
-      setLocalJobsHistory(newHistory);
-      setLocalJobs(previousState);
-
-      // Highlight only the specific jobs that were affected by the action
-      if (storedIds.length > 0) {
-        const changedIds = new Set<number>(storedIds);
+    if (undoResult.affectedJobIds.length > 0) {
+        const changedIds = new Set<number>(undoResult.affectedJobIds);
         setHighlightedJobIds(changedIds);
         window.setTimeout(() => {
           setHighlightedJobIds((prev) => {
@@ -648,26 +741,16 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
             return next;
           });
         }, 1000);
-      }
-
-      if (newHistory.length === 0) {
-        setHasChanges(false);
-      }
-
-      setSnackbar({
-        open: true,
-        message: 'ย้อนกลับการทำรายการล่าสุดเรียบร้อยแล้ว (Undo)',
-        severity: 'info',
-      });
-    } else {
-      setLocalJobs(initialJobs);
-      setHasChanges(false);
-      setSnackbar({
-        open: true,
-        message: 'คืนค่าเป็นแผนเริ่มต้นเรียบร้อยแล้ว (Undo ทั้งหมด)',
-        severity: 'info',
-      });
     }
+
+    setHasChanges(!planningJobsStateEqual(undoResult.jobs, initialJobs));
+    setSnackbar({
+      open: true,
+      message: undoResult.changed
+        ? `ย้อนกลับการทำรายการล่าสุดแล้ว${undoResult.affectedJobIds.length > 1 ? ` (${undoResult.affectedJobIds.length} OP)` : ''}`
+        : 'ไม่มีรายการที่สามารถ Undo เพิ่มได้',
+      severity: 'info',
+    });
   };
 
   const handleSave = async () => {
@@ -684,6 +767,12 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
 
     if (changed.length === 0) {
       setHasChanges(false);
+      setLocalJobsHistory([]);
+      setSnackbar({
+        open: true,
+        message: 'บันทึกเรียบร้อย — ลำดับคิวเป็นข้อมูลล่าสุดแล้ว',
+        severity: 'success',
+      });
       return;
     }
 
@@ -698,7 +787,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
     setSaving(true);
 
     try {
-      const response = await fetch('/api/jobs/update-schedule', {
+      const response = await fetch('/api/jobs/resequence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -708,24 +797,32 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
             findate: job.findate,
             arbpl: job.arbpl,
             seqno: job.seqno,
+            zpg1d: job.zpg1d,
+            queueGroup: job.queueGroup,
           })),
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Save failed');
+        const result = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(result?.error || 'บันทึกแผนไม่สำเร็จ');
       }
 
+      localJobsRef.current = localJobs;
       setInitialJobs(localJobs);
       setHasChanges(false);
       setLocalJobsHistory([]);
       setSnackbar({
         open: true,
-        message: 'บันทึกเรียบร้อย!',
+        message: 'บันทึกแผน Timeline เรียบร้อยแล้ว',
         severity: 'success',
       });
     } catch (error) {
-      alert('เกิดข้อผิดพลาดในการบันทึกตารางกำลังผลิต');
+      setSnackbar({
+        open: true,
+        message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการบันทึกตารางกำลังผลิต',
+        severity: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -737,8 +834,24 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
   );
   const windowEnd = days.at(-1) ?? windowStart;
 
+  const handleExportExcel = React.useCallback(() => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    const params = new URLSearchParams({
+      orderSearch,
+      statuses: selectedStatuses.join(','),
+      workCenter: selectedWorkCenter === 'ALL' ? '' : selectedWorkCenter,
+      dateStart: windowStart,
+      dateEnd: windowEnd,
+    });
+
+    window.location.href = `/api/jobs/export-excel?${params.toString()}`;
+    window.setTimeout(() => setIsExporting(false), 800);
+  }, [isExporting, orderSearch, selectedStatuses, selectedWorkCenter, windowEnd, windowStart]);
+
   const lacquerColorMap = React.useMemo(() => {
-    const jobsList = localJobs.filter(Boolean);
+    const jobsList = initialJobs.filter(Boolean);
 
     // Build a reverse lookup: lacquerKey → first matching job's zpg3d
     const keyToGroup3 = new Map<string, string | null>();
@@ -755,134 +868,108 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
       map.set(key, getLacquerColorByGroup3(keyToGroup3.get(key) ?? null, index));
     });
     return map;
-  }, [localJobs]);
+  }, [initialJobs]);
 
-  const handleDropJob = React.useCallback((jobId: number, targetWorkCenter: string, targetDay: string) => {
-    pushToHistory([jobId]);
-    setLocalJobs((current) => {
-      const draggedJob = current.find((j) => j.id === jobId);
-      if (!draggedJob) return current;
+  const handleDropJob = React.useCallback((
+    jobId: number,
+    targetWorkCenter: string,
+    targetDay: string,
+    targetFinishDate?: string,
+  ) => {
+    const draggedJob = localJobsRef.current.find((job) => job.id === jobId);
+    if (!draggedJob) return false;
 
-      const duration = daysBetween(draggedJob.stdate || targetDay, draggedJob.findate || targetDay);
-      const newStartDate = targetDay;
-      const newFinishDate = addDays(newStartDate, duration);
+    const newFinishDate = getMovedFinishDate(draggedJob, targetDay, targetFinishDate);
+    const scheduledFinishDate = getScheduledFinishDate(draggedJob, targetDay);
+    if (scheduledFinishDate && newFinishDate && scheduledFinishDate > newFinishDate) {
+      setSnackbar({
+        open: true,
+        message: `งานจะเสร็จ ${formatDate(scheduledFinishDate)} ซึ่งเกิน finish date ${formatDate(newFinishDate)}`,
+        severity: 'warning',
+      });
+    }
 
-      const updatedJob = {
-        ...draggedJob,
-        arbpl: targetWorkCenter,
-        stdate: newStartDate,
-        findate: newFinishDate,
-      };
-
-      const targetCellJobs = current
-        .filter((j) => j.arbpl === targetWorkCenter && j.stdate === targetDay && j.id !== jobId)
-        .sort((a, b) => a.seqno - b.seqno || a.id - b.id);
-      const resequencedTargetJobs = [...targetCellJobs, updatedJob].map((job, index) => ({
+    const moveResult = movePlanningJobs({
+      jobs: localJobsRef.current,
+      draggedJobIds: [jobId],
+      targetWorkCenter,
+      patchJob: (job) => ({
         ...job,
-        seqno: index + 1,
-      }));
-
-      let resequencedSourceJobs: PlanningJob[] = [];
-      if (draggedJob.arbpl !== targetWorkCenter || draggedJob.stdate !== targetDay) {
-        resequencedSourceJobs = current
-          .filter((j) => j.arbpl === draggedJob.arbpl && j.stdate === draggedJob.stdate && j.id !== jobId)
-          .sort((a, b) => a.seqno - b.seqno || a.id - b.id)
-          .map((job, index) => ({ ...job, seqno: index + 1 }));
-      }
-
-      const targetJobsById = new Map(resequencedTargetJobs.map((job) => [job.id, job]));
-      const sourceJobsById = new Map(resequencedSourceJobs.map((job) => [job.id, job]));
-      const updatedList = current.map((job) => (
-        targetJobsById.get(job.id) ?? sourceJobsById.get(job.id) ?? job
-      ));
-      setHasChanges(true);
-      return resequenceWorkCentersBySchedule(
-        updatedList,
-        new Set([draggedJob.arbpl, targetWorkCenter]),
-      );
+        stdate: targetDay,
+        findate: newFinishDate,
+      }),
     });
+    if (moveResult.validationError) {
+      setSnackbar({ open: true, message: moveResult.validationError, severity: 'error' });
+      return false;
+    }
+    if (!moveResult.moved || planningJobsStateEqual(localJobsRef.current, moveResult.jobs)) return true;
+
+    pushToHistory([jobId]);
+    localJobsRef.current = moveResult.jobs;
+    setLocalJobs(moveResult.jobs);
+    setHasChanges(true);
     triggerDropHighlight([jobId]);
+    return true;
   }, [triggerDropHighlight]);
 
   const handleDropJobOnTarget = React.useCallback((draggedId: number, targetJob: PlanningJob, position: 'before' | 'after') => {
     setDragOverState(null);
-    pushToHistory([draggedId]);
-    setLocalJobs((current) => {
-      const draggedJob = current.find((j) => j.id === draggedId);
-      if (!draggedJob) return current;
+    const draggedJob = localJobsRef.current.find((job) => job.id === draggedId);
+    if (!draggedJob) return false;
 
-      const targetDay = targetJob.stdate || '';
-      const targetWorkCenter = targetJob.arbpl;
-
-      const duration = daysBetween(draggedJob.stdate || targetDay, draggedJob.findate || targetDay);
-      const newStartDate = targetDay;
-      const newFinishDate = addDays(newStartDate, duration);
-
-      const updatedDraggedJob = {
-        ...draggedJob,
-        arbpl: targetWorkCenter,
-        stdate: newStartDate,
-        findate: newFinishDate,
-      };
-
-      const targetCellJobs = current
-        .filter((j) => j.arbpl === targetWorkCenter && j.stdate === targetDay && j.id !== draggedId)
-        .sort((a, b) => a.seqno - b.seqno || a.id - b.id);
-
-      const targetIdx = targetCellJobs.findIndex((j) => j.id === targetJob.id);
-      let insertionIdx = targetIdx;
-      if (targetIdx !== -1 && position === 'after') {
-        insertionIdx = targetIdx + 1;
-      }
-      const insertionIdxFinal = targetIdx === -1 ? targetCellJobs.length : insertionIdx;
-
-      const newCellJobs = [...targetCellJobs];
-      newCellJobs.splice(insertionIdxFinal, 0, updatedDraggedJob);
-
-      const resequencedCellJobs = newCellJobs.map((j, idx) => ({
-        ...j,
-        seqno: idx + 1,
-      }));
-
-      let sourceCellJobs: PlanningJob[] = [];
-      if (draggedJob.stdate !== targetDay || draggedJob.arbpl !== targetWorkCenter) {
-        const sourceOps = current
-          .filter((j) => j.arbpl === draggedJob.arbpl && j.stdate === draggedJob.stdate && j.id !== draggedId)
-          .sort((a, b) => a.seqno - b.seqno || a.id - b.id);
-        sourceCellJobs = sourceOps.map((j, idx) => ({
-          ...j,
-          seqno: idx + 1,
-        }));
-      }
-
-      const updatedList = current.map((j) => {
-        const inTarget = resequencedCellJobs.find((r) => r.id === j.id);
-        if (inTarget) return inTarget;
-
-        const inSource = sourceCellJobs.find((s) => s.id === j.id);
-        if (inSource) return inSource;
-
-        if (j.id === draggedId) return updatedDraggedJob;
-
-        return j;
+    const targetDay = targetJob.stdate || '';
+    const newFinishDate = getMovedFinishDate(draggedJob, targetDay);
+    const scheduledFinishDate = getScheduledFinishDate(draggedJob, targetDay);
+    if (scheduledFinishDate && newFinishDate && scheduledFinishDate > newFinishDate) {
+      setSnackbar({
+        open: true,
+        message: `งานจะเสร็จ ${formatDate(scheduledFinishDate)} ซึ่งเกิน finish date ${formatDate(newFinishDate)}`,
+        severity: 'warning',
       });
+    }
 
-      setHasChanges(true);
-      return resequenceWorkCentersBySchedule(
-        updatedList,
-        new Set([draggedJob.arbpl, targetWorkCenter]),
-      );
+    const targetWorkCenter = targetJob.arbpl;
+    const moveResult = movePlanningJobs({
+      jobs: localJobsRef.current,
+      draggedJobIds: [draggedId],
+      targetWorkCenter,
+      targetJobId: targetJob.id,
+      position,
+      patchJob: (job) => ({
+        ...job,
+        stdate: targetDay,
+        findate: newFinishDate,
+      }),
     });
+    if (moveResult.validationError) {
+      setSnackbar({ open: true, message: moveResult.validationError, severity: 'error' });
+      return false;
+    }
+    if (!moveResult.moved || planningJobsStateEqual(localJobsRef.current, moveResult.jobs)) return true;
+
+    pushToHistory([draggedId]);
+    localJobsRef.current = moveResult.jobs;
+    setLocalJobs(moveResult.jobs);
+    setHasChanges(true);
     triggerDropHighlight([draggedId]);
+    return true;
   }, [triggerDropHighlight]);
+
+  const activeLocalJobs = React.useMemo(
+    () => localJobs.filter((job) => job.text1?.trim().toUpperCase() !== 'DONE'),
+    [localJobs],
+  );
+  const activeInitialJobs = React.useMemo(
+    () => initialJobs.filter((job) => job.text1?.trim().toUpperCase() !== 'DONE'),
+    [initialJobs],
+  );
 
   const capacityData = React.useMemo(() => {
     const map = new Map<string, number>();
-    localJobs.forEach((job) => {
-      if (job.stdate && job.findate && job.optime > 0) {
-        const start = parseIsoDate(job.stdate);
-        const end = parseIsoDate(job.findate);
-        const durationDays = daysBetween(job.stdate, job.findate) + 1;
+    activeLocalJobs.forEach((job) => {
+      if (job.stdate && job.optime > 0) {
+        const durationDays = getProductionDurationDays(job);
         const hoursPerDay = job.optime / durationDays;
 
         for (let i = 0; i < durationDays; i++) {
@@ -893,24 +980,25 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
       }
     });
     return map;
-  }, [localJobs]);
+  }, [activeLocalJobs]);
 
-  const currentChangeovers = React.useMemo(() => calculateChangeovers(localJobs), [localJobs]);
-  const initialChangeovers = React.useMemo(() => calculateChangeovers(initialJobs), [initialJobs]);
+  const currentChangeovers = React.useMemo(() => calculateChangeovers(activeLocalJobs), [activeLocalJobs]);
+  const initialChangeovers = React.useMemo(() => calculateChangeovers(activeInitialJobs), [activeInitialJobs]);
 
-  const currentOverloads = React.useMemo(() => countOverloadDays(localJobs), [localJobs]);
-  const initialOverloads = React.useMemo(() => countOverloadDays(initialJobs), [initialJobs]);
+  const currentOverloads = React.useMemo(() => countOverloadDays(activeLocalJobs), [activeLocalJobs]);
+  const initialOverloads = React.useMemo(() => countOverloadDays(activeInitialJobs), [activeInitialJobs]);
 
   const filteredJobs = React.useMemo(
-    () => localJobs.filter((job) => {
-      const matchWindow = job.stdate && job.findate &&
-        !(job.findate < windowStart || job.stdate > windowEnd);
-      const matchStatus = selectedStatuses.length === 0 || selectedStatuses.includes(job.text1?.toUpperCase() || 'NOT START');
+    () => activeLocalJobs.filter((job) => {
+      const scheduledFinishDate = getScheduledFinishDate(job);
+      const matchWindow = job.stdate && scheduledFinishDate &&
+        !(scheduledFinishDate < windowStart || job.stdate > windowEnd);
+      const matchStatus = selectedStatuses.includes(job.text1?.trim().toUpperCase() || 'NOT START');
       const matchWorkCenter = selectedWorkCenter === 'ALL' || job.arbpl === selectedWorkCenter;
       const matchOrder = !orderSearch.trim() || job.aufnr.toLowerCase().includes(orderSearch.trim().toLowerCase());
       return matchWindow && matchStatus && matchWorkCenter && matchOrder;
     }),
-    [localJobs, selectedStatuses, selectedWorkCenter, windowEnd, windowStart, orderSearch],
+    [activeLocalJobs, selectedStatuses, selectedWorkCenter, windowEnd, windowStart, orderSearch],
   );
 
   const visibleWorkCenters = selectedWorkCenter === 'ALL' ? workCenters : [selectedWorkCenter];
@@ -922,11 +1010,14 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
 
       const allocatedTracks: { startMs: number; endMs: number; trackIndex: number }[] = [];
       const jobsWithPosition = wcJobs.map((job) => {
-        const pos = calculateGanttPosition(job.stdate || '', job.findate || '', windowStart, windowEnd);
+        const scheduledFinishDate = getScheduledFinishDate(job);
+        if (!scheduledFinishDate) return null;
+
+        const pos = calculateGanttPosition(job.stdate || '', scheduledFinishDate, windowStart, windowEnd);
         if (!pos) return null;
 
         const startMs = parseIsoDate(job.stdate || '').getTime();
-        const endMs = parseIsoDate(job.findate || '').getTime() + 86400000;
+        const endMs = parseIsoDate(scheduledFinishDate).getTime() + 86400000;
 
         const usedTrackIndices = new Set<number>();
         for (const allocated of allocatedTracks) {
@@ -961,7 +1052,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
       const isCollapsed = collapsedWCs[wc] || false;
       const maxTrackIndex = jobsWithPosition.reduce((max, item) => Math.max(max, item.trackIndex), -1);
       const totalTracks = Math.max(1, maxTrackIndex + 1);
-      const laneHeight = isCollapsed ? 48 : (totalTracks * 76 + 20);
+      const laneHeight = isCollapsed ? 48 : (totalTracks * GANTT_TRACK_PITCH + 20);
 
       return {
         wc,
@@ -982,23 +1073,9 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
           <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} sx={{ alignItems: { lg: 'center' }, justifyContent: 'space-between' }}>
             <Box>
               <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: '1.2rem' }}>
-                Gantt Capacity Scheduler
+                กราฟ
               </Typography>
-              <Stack direction="row" spacing={0.75} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.75 }}>
-                <Chip
-                  icon={<span>🎨</span>}
-                  label={`สลับสี L/Q: ${currentChangeovers} ครั้ง`}
-                  sx={{
-                    color: '#c2410c',
-                    bgcolor: '#fff7ed',
-                    border: '1px solid #ffedd5',
-                    fontWeight: 900,
-                    fontSize: '0.74rem',
-                    height: 24,
-                    '& .MuiChip-label': { px: 1 }
-                  }}
-                />
-              </Stack>
+
             </Box>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' }, flexWrap: 'wrap' }}>
@@ -1067,13 +1144,13 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                     setSelectedStatuses(typeof value === 'string' ? value.split(',') : value as string[]);
                   }}
                   renderValue={(selected) => {
-                    if (selected.length === 4) return 'ทุกสถานะ';
+                    if (selected.length === ACTIVE_STATUS_OPTIONS.length) return 'ทุกสถานะ';
                     if (selected.length === 0) return 'ไม่มีสถานะ';
                     return selected.join(', ');
                   }}
                   sx={{ borderRadius: 1.5, fontSize: '0.82rem', fontWeight: 800, bgcolor: '#ffffff' }}
                 >
-                  {['NOT START', 'START', 'WAIT', 'DONE'].map((st) => (
+                  {ACTIVE_STATUS_OPTIONS.map((st) => (
                     <MenuItem key={st} value={st} sx={{ fontSize: '0.82rem', fontWeight: 700, py: 0.25 }}>
                       <Checkbox checked={selectedStatuses.indexOf(st) > -1} size="small" sx={{ py: 0, mr: 0.5 }} />
                       <Typography sx={{ fontSize: '0.82rem', fontWeight: 700 }}>{st}</Typography>
@@ -1081,6 +1158,27 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                   ))}
                 </Select>
               </FormControl>
+
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleExportExcel}
+                disabled={isExporting}
+                startIcon={isExporting ? <CircularProgress size={14} color="inherit" /> : <ExcelIcon />}
+                sx={{
+                  height: 38,
+                  px: 1.5,
+                  borderRadius: 1.5,
+                  borderColor: '#bbf7d0',
+                  color: '#16a34a',
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                  textTransform: 'none',
+                  '&:hover': { borderColor: '#16a34a', bgcolor: 'rgba(22, 163, 74, 0.04)' },
+                }}
+              >
+                {isExporting ? 'EXPORTING...' : 'EXPORT EXCEL'}
+              </Button>
 
               <Button
                 variant="outlined"
@@ -1192,13 +1290,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
                     const loadHours = capacityData.get(`${wc}|${day}`) ?? 0.0;
                     const heightPercent = Math.min(100, (loadHours / 32.0) * 100);
                     const isOverloaded = loadHours > MACHINE_CAPACITY_LIMIT;
-
-                    let barColor = 'linear-gradient(180deg, #6366f1 0%, #4f46e5 100%)';
-                    if (isOverloaded) {
-                      barColor = 'linear-gradient(180deg, #f87171 0%, #ef4444 100%)';
-                    } else if (loadHours > 16.0) {
-                      barColor = 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)';
-                    }
+                    const barColor = getWorkCenterBarColor(wc);
 
                     return (
                       <Tooltip
@@ -1525,7 +1617,7 @@ export default function GanttSchedulerClient({ initialDate, jobs, workCenters, g
       <NotificationSnackbar
         open={snackbar.open}
         message={snackbar.message}
-        onClose={handleSnackbarClose}
+        onClose={() => handleSnackbarClose(snackbar.message)}
         severity={snackbar.severity}
       />
 

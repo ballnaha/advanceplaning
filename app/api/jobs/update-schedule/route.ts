@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { validateOperationPrecedenceUpdate } from '@/lib/operation-precedence-server';
 
 type ScheduleUpdateItem = {
   id: number;
@@ -15,6 +16,11 @@ export async function POST(request: Request) {
 
     if (!Array.isArray(items) || items.length === 0) {
       return Response.json({ error: 'items is required' }, { status: 400 });
+    }
+
+    const precedenceValidation = await validateOperationPrecedenceUpdate(items);
+    if (precedenceValidation) {
+      return Response.json(precedenceValidation, { status: 409 });
     }
 
     const params: Array<number | string | null> = [];
@@ -67,7 +73,10 @@ export async function POST(request: Request) {
     await prisma.$executeRawUnsafe(sql, ...params);
 
     return Response.json({ updated: items.length });
-  } catch (error: any) {
-    return Response.json({ error: error.message || 'Internal server error' }, { status: 500 });
+  } catch (error: unknown) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 },
+    );
   }
 }

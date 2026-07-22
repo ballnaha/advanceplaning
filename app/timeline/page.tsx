@@ -45,19 +45,22 @@ async function TimelineContainer() {
     lastDate: dates.at(-1) ?? null,
   };
 
-  const workCenters = TARGET_WORK_CENTERS.map((workCenter) => {
-    const scopedJobs = jobs.filter((job) => job.arbpl === workCenter);
-    const scopedDatedJobs = scopedJobs.filter((job) => job.stdate && job.findate);
-    const scopedJobsWithTime = scopedJobs.filter((job) => job.optime > 0);
-    return {
-      workCenter,
-      operations: scopedJobs.length,
-      orders: new Set(scopedJobs.map((job) => job.aufnr)).size,
-      totalHours: Number(scopedJobs.reduce((sum, job) => sum + job.optime, 0).toFixed(1)),
-      dateCoverage: percentage(scopedDatedJobs.length, scopedJobs.length),
-      opTimeCoverage: percentage(scopedJobsWithTime.length, scopedJobs.length),
-    };
-  });
+  const availableWorkCenters = new Set(jobs.map((job) => job.arbpl));
+  const workCenters = TARGET_WORK_CENTERS
+    .filter((workCenter) => availableWorkCenters.has(workCenter))
+    .map((workCenter) => {
+      const scopedJobs = jobs.filter((job) => job.arbpl === workCenter);
+      const scopedDatedJobs = scopedJobs.filter((job) => job.stdate && job.findate);
+      const scopedJobsWithTime = scopedJobs.filter((job) => job.optime > 0);
+      return {
+        workCenter,
+        operations: scopedJobs.length,
+        orders: new Set(scopedJobs.map((job) => job.aufnr)).size,
+        totalHours: Number(scopedJobs.reduce((sum, job) => sum + job.optime, 0).toFixed(1)),
+        dateCoverage: percentage(scopedDatedJobs.length, scopedJobs.length),
+        opTimeCoverage: percentage(scopedJobsWithTime.length, scopedJobs.length),
+      };
+    });
   const timelineOperations: TimelineOperation[] = datedJobs.map((job) => ({
     id: job.id,
     workCenter: job.arbpl,

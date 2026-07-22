@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   Box,
   Chip,
+  Collapse,
   Divider,
   Paper,
   Stack,
@@ -14,6 +15,7 @@ import type { PlanningJob } from '@/lib/planning';
 import PlanningGroupTable from './PlanningGroupTable';
 import type { SequenceChange } from './PlanningGroupTable';
 import SequenceChangesDialog from './SequenceChangesDialog';
+import type { QuickMoveHandler } from './JobDetailDialog';
 
 const numberFormatter = new Intl.NumberFormat('th-TH');
 
@@ -53,6 +55,8 @@ interface WorkCenterCardProps {
   sequenceChanges: Map<number, SequenceChange>;
   highlightedJobIds?: Set<number>;
   droppedJobIds?: Set<number>;
+  onQuickMove: QuickMoveHandler;
+  workCenters: string[];
   onToggleSelect: (jobId: number) => void;
   onToggleSelectAllGroup: (jobIds: number[], selectAll: boolean) => void;
   onToggleCollapse: (key: string) => void;
@@ -85,6 +89,34 @@ function routingOperationsEqualForJobs(
   return true;
 }
 
+function highlightedJobsEqual(
+  previous: Set<number> | undefined,
+  next: Set<number> | undefined,
+  jobs: PlanningJob[],
+) {
+  return jobs.every((job) => previous?.has(job.id) === next?.has(job.id));
+}
+
+function sequenceChangesEqual(
+  previous: Map<number, SequenceChange>,
+  next: Map<number, SequenceChange>,
+  jobs: PlanningJob[],
+) {
+  return jobs.every((job) => {
+    const previousChange = previous.get(job.id);
+    const nextChange = next.get(job.id);
+    if (!previousChange || !nextChange) return previousChange === nextChange;
+    return (
+      previousChange.previousSeq === nextChange.previousSeq &&
+      previousChange.currentSeq === nextChange.currentSeq &&
+      previousChange.previousWorkCenter === nextChange.previousWorkCenter &&
+      previousChange.currentWorkCenter === nextChange.currentWorkCenter &&
+      previousChange.previousGroup === nextChange.previousGroup &&
+      previousChange.currentGroup === nextChange.currentGroup
+    );
+  });
+}
+
 const WorkCenterCard = React.memo(({
   workCenter,
   group,
@@ -96,6 +128,8 @@ const WorkCenterCard = React.memo(({
   sequenceChanges,
   highlightedJobIds,
   droppedJobIds,
+  onQuickMove,
+  workCenters,
   onToggleSelect,
   onToggleSelectAllGroup,
   onToggleCollapse,
@@ -167,7 +201,16 @@ const WorkCenterCard = React.memo(({
   }, [onMoveJobOneStep, workCenter]);
 
   return (
-    <Paper sx={{ p: 2.5, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.06)', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.01)' }}>
+    <Paper
+      sx={{
+        p: 2.5,
+        borderRadius: 4,
+        border: '1px solid rgba(15, 23, 42, 0.06)',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.01)',
+        contentVisibility: 'auto',
+        containIntrinsicSize: `auto ${Math.max(520, group.length * 76 + 420)}px`,
+      }}
+    >
       <Stack
         direction={{ xs: 'column', md: 'row' }}
         spacing={2}
@@ -214,6 +257,9 @@ const WorkCenterCard = React.memo(({
         const groupJobs = productGroupStats?.jobs ?? [];
         const collapseKey = `${workCenter}|${groupDef.id}`;
         const isCollapsed = collapsedGroups[collapseKey] ?? false;
+        const collapseDuration = groupJobs.length > 50
+          ? { enter: 160, exit: 130 }
+          : { enter: 220, exit: 180 };
 
         return (
           <Box key={groupDef.id} sx={{ mb: 2.5 }}>
@@ -231,7 +277,7 @@ const WorkCenterCard = React.memo(({
                 border: '1px solid',
                 borderColor: isCollapsed ? 'rgba(15, 23, 42, 0.05)' : `${groupDef.colorAccent}25`,
                 borderLeft: `5px solid ${groupDef.colorAccent}`,
-                transition: 'all 180ms ease',
+                transition: 'background-color 160ms ease, border-color 160ms ease',
                 '&:hover': {
                   bgcolor: isCollapsed ? 'rgba(15, 23, 42, 0.03)' : 'rgba(15, 23, 42, 0.06)',
                   borderColor: `${groupDef.colorAccent}45`,
@@ -250,9 +296,22 @@ const WorkCenterCard = React.memo(({
                     fontSize: '0.85rem',
                   }}
                 >
-                  <span style={{ fontSize: '0.8rem', display: 'inline-block', width: '12px' }}>
-                    {isCollapsed ? '▶' : '▼'}
-                  </span>
+                  <Box
+                    component="span"
+                    aria-hidden
+                    sx={{
+                      display: 'inline-block',
+                      width: 12,
+                      fontSize: '0.8rem',
+                      lineHeight: 1,
+                      transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                      transformOrigin: '50% 50%',
+                      transition: 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+                      '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                    }}
+                  >
+                    ▶
+                  </Box>
                   {groupDef.label}
                 </Typography>
                 <Chip
@@ -285,30 +344,47 @@ const WorkCenterCard = React.memo(({
               )}
             </Box>
 
-            <PlanningGroupTable
-              groupJobs={groupJobs}
-              group={group}
-              routingOperationsByOrder={routingOperationsByOrder}
-              externalRoutingJobIds={externalRoutingJobIds}
-              groupLabel={groupDef.label}
-              workCenter={workCenter}
-              isCollapsed={isCollapsed}
-              lacquerColorMap={lacquerColorMap}
-              selectedJobIds={selectedJobIds}
-              highlightedJobIds={highlightedJobIds}
-              droppedJobIds={droppedJobIds}
-              onToggleSelect={onToggleSelect}
-              onToggleSelectAllGroup={onToggleSelectAllGroup}
-              onDragStart={onDragStart}
-              onDrag={onDrag}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onDropToGroup={onDropToGroup}
-              onDragEnd={onDragEnd}
-              onMoveUp={handleMoveUp}
-              onMoveDown={handleMoveDown}
-            />
+            <Collapse
+              in={!isCollapsed}
+              timeout={collapseDuration}
+              easing={{
+                enter: 'cubic-bezier(0.2, 0, 0, 1)',
+                exit: 'cubic-bezier(0.4, 0, 1, 1)',
+              }}
+              unmountOnExit
+              sx={{
+                contain: 'paint',
+                '@media (prefers-reduced-motion: reduce)': {
+                  transitionDuration: '0ms !important',
+                },
+              }}
+            >
+              <PlanningGroupTable
+                groupJobs={groupJobs}
+                group={group}
+                routingOperationsByOrder={routingOperationsByOrder}
+                externalRoutingJobIds={externalRoutingJobIds}
+                groupLabel={groupDef.label}
+                workCenter={workCenter}
+                lacquerColorMap={lacquerColorMap}
+                selectedJobIds={selectedJobIds}
+                highlightedJobIds={highlightedJobIds}
+                droppedJobIds={droppedJobIds}
+                onQuickMove={onQuickMove}
+                workCenters={workCenters}
+                onToggleSelect={onToggleSelect}
+                onToggleSelectAllGroup={onToggleSelectAllGroup}
+                onDragStart={onDragStart}
+                onDrag={onDrag}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                onDropToGroup={onDropToGroup}
+                onDragEnd={onDragEnd}
+                onMoveUp={handleMoveUp}
+                onMoveDown={handleMoveDown}
+              />
+            </Collapse>
           </Box>
         );
       })}
@@ -340,15 +416,15 @@ const WorkCenterCard = React.memo(({
       );
     }) &&
     prevProps.group.every((job) => prevProps.selectedJobIds.has(job.id) === nextProps.selectedJobIds.has(job.id)) &&
-    prevProps.group.every((job) => prevProps.sequenceChanges.get(job.id) === nextProps.sequenceChanges.get(job.id)) &&
+    sequenceChangesEqual(prevProps.sequenceChanges, nextProps.sequenceChanges, prevProps.group) &&
     routingOperationsEqualForJobs(
       prevProps.routingOperationsByOrder,
       nextProps.routingOperationsByOrder,
       prevProps.group,
     ) &&
     prevProps.externalRoutingJobIds === nextProps.externalRoutingJobIds &&
-    prevProps.highlightedJobIds === nextProps.highlightedJobIds &&
-    prevProps.droppedJobIds === nextProps.droppedJobIds
+    highlightedJobsEqual(prevProps.highlightedJobIds, nextProps.highlightedJobIds, prevProps.group) &&
+    highlightedJobsEqual(prevProps.droppedJobIds, nextProps.droppedJobIds, prevProps.group)
   );
 });
 

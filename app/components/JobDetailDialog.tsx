@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   Box,
   Chip,
+  Collapse,
   Dialog,
   DialogContent,
   DialogTitle,
@@ -25,6 +26,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
+import { useRouter } from 'next/navigation';
 
 const numberFormatter = new Intl.NumberFormat('th-TH');
 const dateFormatter = new Intl.DateTimeFormat('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -66,12 +68,19 @@ type DetailSection = {
   title: string;
 };
 
+export type QuickMoveHandler = (
+  jobId: number,
+  targetWorkCenter: string,
+  targetStartDate: string,
+  targetFinishDate: string,
+) => boolean | void | Promise<boolean | void>;
+
 type JobDetailDialogProps = {
   fallbackLacquerColor: LacquerColor;
   job: PlanningJob | null;
   lacquerColorMap: Map<string, LacquerColor>;
   onClose: () => void;
-  onQuickMove?: (jobId: number, targetWorkCenter: string, targetStartDate: string) => void;
+  onQuickMove?: QuickMoveHandler;
   workCenters?: string[];
 };
 
@@ -243,12 +252,20 @@ function renderDetailValue(
   }
 
   if (field.highlight === 'status' && value !== '-') {
+    const statusStyle = getStatusStyle(String(value).trim().toUpperCase());
     return (
       <Chip
         size="small"
-        color={String(value).toUpperCase() === 'WAIT' ? 'warning' : 'default'}
         label={value}
-        sx={{ height: 20, fontWeight: 800, fontSize: '0.68rem', borderRadius: 1 }}
+        sx={{
+          height: 20,
+          color: statusStyle.color,
+          bgcolor: statusStyle.bg,
+          border: `1px solid ${statusStyle.border}`,
+          fontWeight: 800,
+          fontSize: '0.68rem',
+          borderRadius: 1,
+        }}
       />
     );
   }
@@ -306,6 +323,7 @@ export default function JobDetailDialog({
   onQuickMove,
   workCenters,
 }: JobDetailDialogProps) {
+  const router = useRouter();
   const [retainedJob, setRetainedJob] = React.useState<PlanningJob | null>(currentJob);
   const [selectedJobOverride, setSelectedJobOverride] = React.useState<PlanningJob | null>(null);
   const [routing, setRouting] = React.useState<PlanningJob[]>([]);
@@ -340,15 +358,32 @@ export default function JobDetailDialog({
   const handleMoveClick = async () => {
     if (!job || !targetWC || !targetDate) return;
 
-    if (onQuickMove) {
-      onQuickMove(job.id, targetWC, targetDate);
-      onClose();
-    } else {
-      setSavingQuickMove(true);
-      try {
-        const duration = calculateInclusiveProductionDays(job.stdate, job.findate) || job.prdday || 1;
-        const newFinishDateStr = dayjs(targetDate).add(duration - 1, 'day').format('YYYY-MM-DD');
+    setSavingQuickMove(true);
+    try {
+      const duration = calculateInclusiveProductionDays(job.stdate, job.findate) || job.prdday || 1;
+      const newFinishDateStr = dayjs(targetDate).add(duration - 1, 'day').format('YYYY-MM-DD');
 
+      // Determine seqno: if moving to a different machine, append to end of that machine's queue
+      let newSeqno = job.seqno;
+      if (targetWC !== job.arbpl) {
+        try {
+          const res = await fetch(`/api/jobs/routing?workCenter=${encodeURIComponent(targetWC)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const jobs: Array<{ seqno?: number }> = data.jobs ?? [];
+            const maxSeqno = jobs.reduce((max: number, j: { seqno?: number }) => Math.max(max, j.seqno ?? 0), 0);
+            newSeqno = maxSeqno + 1;
+          }
+        } catch {
+          // Fallback: use a large number to ensure it goes to the end
+          newSeqno = 9999;
+        }
+      }
+
+      if (onQuickMove) {
+        const moved = await onQuickMove(job.id, targetWC, targetDate, newFinishDateStr);
+        if (moved === false) return;
+      } else {
         const response = await fetch('/api/jobs/update-schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -359,7 +394,7 @@ export default function JobDetailDialog({
                 stdate: targetDate,
                 findate: newFinishDateStr,
                 arbpl: targetWC,
-                seqno: job.seqno,
+                seqno: newSeqno,
               }
             ]
           })
@@ -368,14 +403,15 @@ export default function JobDetailDialog({
         if (!response.ok) {
           throw new Error('Failed to update schedule');
         }
-
-        window.location.reload();
-      } catch (err) {
-        console.error(err);
-        alert('เกิดข้อผิดพลาดในการย้ายเครื่องจักร/วันที่');
-      } finally {
-        setSavingQuickMove(false);
       }
+
+      onClose();
+      if (!onQuickMove) React.startTransition(() => router.refresh());
+    } catch (err) {
+      console.error(err);
+      if (!onQuickMove) alert('เกิดข้อผิดพลาดในการย้ายเครื่องจักร/วันที่');
+    } finally {
+      setSavingQuickMove(false);
     }
   };
 
@@ -527,19 +563,37 @@ export default function JobDetailDialog({
                   bgcolor: '#ffffff',
                 }}
               >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    display: 'block',
-                    color: '#64748b',
-                    fontWeight: 900,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    mb: 2,
-                  }}
-                >
-                  เส้นทางการผลิต (Order Routing Flow)
-                </Typography>
+                <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#64748b',
+                      fontWeight: 900,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                    }}
+                  >
+                    เส้นทางการผลิต (Order Routing Flow)
+                  </Typography>
+                  {(() => {
+                    const selectedStatus = job.text1?.trim().toUpperCase() || 'NOT START';
+                    const selectedStatusStyle = getStatusStyle(selectedStatus);
+                    return (
+                      <Chip
+                        size="small"
+                        label={`OP ${job.vornr || '-'} · ${selectedStatus}`}
+                        sx={{
+                          height: 22,
+                          color: selectedStatusStyle.color,
+                          bgcolor: selectedStatusStyle.bg,
+                          border: `1px solid ${selectedStatusStyle.border}`,
+                          fontWeight: 850,
+                          fontSize: '0.68rem',
+                        }}
+                      />
+                    );
+                  })()}
+                </Stack>
 
                 <Box
                   sx={{
@@ -635,15 +689,12 @@ export default function JobDetailDialog({
                                 position: 'relative',
                                 transition: 'all 0.2s ease',
                                 ...(isActive ? {
-                                  boxShadow: '0 0 0 4px rgba(79, 70, 229, 0.25)',
-                                  borderColor: '#4f46e5',
-                                  bgcolor: '#4f46e5',
-                                  color: '#ffffff',
+                                  boxShadow: `0 0 0 4px ${statusStyle.border}66`,
                                   animation: 'pulseGlow 2s infinite ease-in-out',
                                   '@keyframes pulseGlow': {
-                                    '0%': { boxShadow: '0 0 0 0 rgba(79, 70, 229, 0.4)' },
-                                    '70%': { boxShadow: '0 0 0 6px rgba(79, 70, 229, 0)' },
-                                    '100%': { boxShadow: '0 0 0 0 rgba(79, 70, 229, 0)' },
+                                    '0%': { boxShadow: `0 0 0 0 ${statusStyle.border}99` },
+                                    '70%': { boxShadow: `0 0 0 6px ${statusStyle.border}00` },
+                                    '100%': { boxShadow: `0 0 0 0 ${statusStyle.border}00` },
                                   },
                                 } : {}),
                               }}
@@ -699,8 +750,8 @@ export default function JobDetailDialog({
                                   fontWeight: 700,
                                 }}
                               >
-                                {rJob.stdate ? `${rJob.stdate.split('-').slice(1).reverse().join('/')}` : '-'}
-                                {rJob.findate ? ` - ${rJob.findate.split('-').slice(1).reverse().join('/')}` : ''}
+                                {rJob.stdate ? formatDate(rJob.stdate) : '-'}
+                                {rJob.findate ? ` - ${formatDate(rJob.findate)}` : ''}
                               </Typography>
                             </Box>
                           </Box>
@@ -748,7 +799,10 @@ export default function JobDetailDialog({
                 <Button
                   variant="outlined"
                   size="small"
-                  onClick={() => setShowQuickReschedule(!showQuickReschedule)}
+                  onClick={() => setShowQuickReschedule((current) => !current)}
+                  aria-expanded={showQuickReschedule}
+                  aria-controls="quick-reschedule-panel"
+                  disableRipple
                   sx={{
                     borderRadius: 1.5,
                     fontSize: '0.78rem',
@@ -769,8 +823,19 @@ export default function JobDetailDialog({
             )}
 
             {/* Quick Reschedule Section */}
-            {showQuickReschedule && wcList.length > 0 && (
+            <Collapse
+              in={showQuickReschedule && wcList.length > 0}
+              timeout={{ enter: 220, exit: 160 }}
+              easing={{ enter: 'cubic-bezier(0.22, 1, 0.36, 1)', exit: 'cubic-bezier(0.4, 0, 1, 1)' }}
+              unmountOnExit
+              sx={{
+                '& .MuiCollapse-wrapperInner': {
+                  willChange: 'height',
+                },
+              }}
+            >
               <Paper
+                id="quick-reschedule-panel"
                 elevation={0}
                 sx={{
                   p: 2,
@@ -853,11 +918,14 @@ export default function JobDetailDialog({
                       }
                     }}
                   >
-                    {savingQuickMove ? 'กำลังบันทึก...' : 'ย้ายแผนการผลิต'}
+                    {savingQuickMove ? 'กำลังย้ายและจัดลำดับ...' : 'ย้ายและจัดลำดับคิว'}
                   </Button>
                 </Stack>
+                <Typography sx={{ mt: 1.25, color: '#64748b', fontSize: '0.72rem', fontWeight: 650 }}>
+                  เมื่อยืนยัน ระบบจะจัดลำดับ Seq ใหม่ตาม Start Date ของ Work Center ที่ได้รับผลกระทบโดยอัตโนมัติ
+                </Typography>
               </Paper>
-            )}
+            </Collapse>
 
             <Box
               sx={{

@@ -8,7 +8,7 @@ import { useNavigation } from '../NavigationContext';
 
 const navigation = [
   { label: 'แดชบอร์ดหลัก', title: 'Planning Dashboard', href: '/', icon: Category },
-  { label: 'กำลังผลิต & Gantt', title: 'Resource Timeline (Gantt)', href: '/timeline', icon: Clock },
+  { label: 'กำลังการผลิต', title: 'Resource Timeline', href: '/timeline', icon: Clock },
   { label: 'คู่มือการใช้งาน', title: 'คู่มือการใช้งาน', href: '/guide', icon: Book1 },
 ] as const;
 

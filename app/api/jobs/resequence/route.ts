@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { validateOperationPrecedenceUpdate } from '@/lib/operation-precedence-server';
 
 type ResequenceItem = {
   id: number;
@@ -6,6 +7,8 @@ type ResequenceItem = {
   zpg1d?: string | null;
   queueGroup?: string | null;
   arbpl?: string;
+  stdate?: string | null;
+  findate?: string | null;
 };
 
 export async function POST(request: Request) {
@@ -14,6 +17,11 @@ export async function POST(request: Request) {
 
   if (!Array.isArray(items) || items.length === 0) {
     return Response.json({ error: 'items is required' }, { status: 400 });
+  }
+
+  const precedenceValidation = await validateOperationPrecedenceUpdate(items);
+  if (precedenceValidation) {
+    return Response.json(precedenceValidation, { status: 409 });
   }
 
   const params: Array<number | string | null> = [];
@@ -60,6 +68,26 @@ export async function POST(request: Request) {
     for (const item of items) {
       sql += 'WHEN ? THEN ? ';
       params.push(item.id, item.arbpl!.trim());
+    }
+    sql += 'END';
+  }
+
+  const hasStdate = items.some((item) => item.stdate !== undefined);
+  if (hasStdate) {
+    sql += ', stdate = CASE id ';
+    for (const item of items) {
+      sql += 'WHEN ? THEN ? ';
+      params.push(item.id, item.stdate ?? null);
+    }
+    sql += 'END';
+  }
+
+  const hasFindate = items.some((item) => item.findate !== undefined);
+  if (hasFindate) {
+    sql += ', findate = CASE id ';
+    for (const item of items) {
+      sql += 'WHEN ? THEN ? ';
+      params.push(item.id, item.findate ?? null);
     }
     sql += 'END';
   }

@@ -1,17 +1,16 @@
 'use client';
 
 import * as React from 'react';
-import { Button, Stack, CircularProgress } from '@mui/material';
+import { Button, Stack, Divider, CircularProgress } from '@mui/material';
 
 type PlanningActionButtonsProps = {
   isDirty: boolean;
   isSaving: boolean;
-  isAllocating: boolean;
   isSequencing?: boolean;
   density?: 'default' | 'compact';
   onAutoSequence: () => void;
-  onAutoAllocate: () => void;
   onSave: () => void;
+  onExport: () => void;
 };
 
 const AutoSequenceIcon = () => (
@@ -29,18 +28,25 @@ const SaveIcon = () => (
   </svg>
 );
 
+const ExcelIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: 4 }}>
+    <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a" />
+    <text x="12" y="16" textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold" fontFamily="Arial, sans-serif">XLS</text>
+  </svg>
+);
+
 export default function PlanningActionButtons({
   isDirty,
   isSaving,
-  isAllocating,
   isSequencing = false,
   density = 'default',
   onAutoSequence,
-  onAutoAllocate,
   onSave,
+  onExport,
 }: PlanningActionButtonsProps) {
   const compact = density === 'compact';
-  
+  const [isExporting, setIsExporting] = React.useState(false);
+
   const baseButtonSx = {
     minWidth: 0,
     px: compact ? 1.25 : 1.75,
@@ -54,18 +60,59 @@ export default function PlanningActionButtons({
     textTransform: 'none',
   } as const;
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      onExport();
+    } catch (e) {
+      console.error('Failed to export excel:', e);
+    } finally {
+      setTimeout(() => {
+        setIsExporting(false);
+      }, 800);
+    }
+  };
+
   return (
     <Stack
       direction="row"
       spacing={compact ? 0.5 : 1}
       sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
     >
+      {/* EXPORT EXCEL */}
+      <Button
+        size="small"
+        variant="outlined"
+        disabled={isSaving || isSequencing || isExporting}
+        onClick={handleExport}
+        sx={{
+          ...baseButtonSx,
+          color: '#16a34a',
+          borderColor: '#bbf7d0',
+          '&:hover': {
+            borderColor: '#16a34a',
+            bgcolor: 'rgba(22, 163, 74, 0.04)',
+            boxShadow: '0 2px 8px rgba(22, 163, 74, 0.12)',
+          },
+        }}
+      >
+        {isExporting ? (
+          <CircularProgress size={12} color="inherit" sx={{ mr: 0.75 }} />
+        ) : (
+          <ExcelIcon />
+        )}
+        {isExporting ? 'EXPORTING…' : 'EXPORT EXCEL'}
+      </Button>
+
+      {/* Divider separator */}
+      <Divider orientation="vertical" flexItem sx={{ mx: 0.5, borderColor: 'rgba(15, 23, 42, 0.12)' }} />
+
       {/* AUTO SEQUENCE */}
       <Button
         size="small"
         variant="outlined"
         onClick={onAutoSequence}
-        disabled={isSaving || isAllocating || isSequencing}
+        disabled={isSaving || isSequencing || isExporting}
         sx={{
           ...baseButtonSx,
           color: '#475569',
@@ -85,37 +132,11 @@ export default function PlanningActionButtons({
         {isSequencing ? 'กำลังจัดลำดับ…' : 'DEFAULT SETTING'}
       </Button>
 
-      {/* EXPERIMENTAL WORK CENTER ALLOCATION */}
-      <Button
-        size="small"
-        variant="outlined"
-        onClick={onAutoAllocate}
-        disabled={isSaving || isAllocating}
-        sx={{
-          ...baseButtonSx,
-          color: '#0369a1',
-          borderColor: '#7dd3fc',
-          bgcolor: 'rgba(14, 165, 233, 0.04)',
-          '&:hover': {
-            borderColor: '#0284c7',
-            color: '#075985',
-            bgcolor: 'rgba(14, 165, 233, 0.09)',
-          },
-        }}
-      >
-        {isAllocating ? (
-          <CircularProgress size={12} color="inherit" sx={{ mr: 0.75 }} />
-        ) : (
-          <AutoSequenceIcon />
-        )}
-        {isAllocating ? 'กำลังคำนวณ…' : 'ทดลอง AUTO WC'}
-      </Button>
-
       {/* SAVE */}
       <Button
         size="small"
         variant={isDirty ? 'contained' : 'outlined'}
-        disabled={isSaving || isAllocating}
+        disabled={isSaving || isExporting}
         onClick={onSave}
         sx={{
           ...baseButtonSx,
@@ -149,4 +170,3 @@ export default function PlanningActionButtons({
     </Stack>
   );
 }
-

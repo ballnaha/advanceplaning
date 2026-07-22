@@ -18,7 +18,7 @@ import { CloseCircle, Clock, HambergerMenu, SearchNormal1 } from 'iconsax-react'
 import { ZPG1D_GROUPS, cleanZpg2d, getQueueGroupId, isQueueGroupOverride } from '@/lib/zpg1d-helpers';
 import type { PlanningJob, WorkCenterSummary } from '@/lib/planning';
 import { FinishDateWarningIcon, isFinishDateWithinWarningWindow } from './FinishDateWarning';
-import JobDetailDialog from './JobDetailDialog';
+import JobDetailDialog, { type QuickMoveHandler } from './JobDetailDialog';
 
 type LacquerColor = { bg: string; chipBg: string; text: string; border: string };
 
@@ -29,6 +29,8 @@ type RoutingBoardProps = {
   selectedJobIds: Set<number>;
   highlightedJobIds?: Set<number>;
   droppedJobIds?: Set<number>;
+  onQuickMove: QuickMoveHandler;
+  quickMoveWorkCenters: string[];
   lacquerColorMap: Map<string, LacquerColor>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (key: string) => void;
@@ -68,7 +70,7 @@ function getStatusStyle(status: string | null) {
     case 'START':
       return { label: 'START', color: '#0369a1', bgcolor: '#f0f9ff', borderColor: '#bae6fd' };
     case 'WAIT':
-      return { label: 'WAIT', color: '#b45309', bgcolor: '#fffbeb', borderColor: '#fde68a' };
+      return { label: 'WAIT', color: '#854d0e', bgcolor: '#fef9c3', borderColor: '#eab308' };
     default:
       return { label: status || 'NOT START', color: '#64748b', bgcolor: '#f8fafc', borderColor: '#e2e8f0' };
   }
@@ -117,8 +119,8 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
       onDrag={onDrag}
       onDragOver={(event) => {
         event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
-        const position = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+        onDragOverJob(event, job.id);
+        const position = event.currentTarget.classList.contains('drop-after-row') ? 'after' : 'before';
         if (event.currentTarget.dataset.dropPosition !== position) {
           event.currentTarget.dataset.dropPosition = position;
           const indicator = event.currentTarget.querySelector<HTMLElement>('[data-drop-indicator]');
@@ -127,7 +129,6 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
             : `แทรกก่อนลำดับ ${String(index + 1).padStart(2, '0')}`;
           if (indicator) indicator.textContent = nextLabel;
         }
-        onDragOverJob(event, job.id);
       }}
       onDragLeave={onDragLeaveJob}
       onDrop={(event) => {
@@ -140,7 +141,7 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
       sx={{
         position: 'relative',
         contentVisibility: 'auto',
-        containIntrinsicSize: '150px',
+        containIntrinsicSize: 'auto 180px',
         overflow: 'visible',
         cursor: 'pointer',
         borderRadius: 2.5,
@@ -154,8 +155,8 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
         boxShadow: isHighlighted
           ? `0 0 0 2px ${isHighlighted === 'undo' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(6, 182, 212, 0.2)'}, 0 8px 20px rgba(15, 23, 42, 0.08)`
           : (selected
-            ? '0 0 0 2px rgba(99, 102, 241, 0.1), 0 8px 20px rgba(15, 23, 42, 0.08)'
-            : '0 5px 16px rgba(15, 23, 42, 0.045)'),
+            ? '0 0 0 2px rgba(99, 102, 241, 0.1)'
+            : 'none'),
         transition: isHighlighted
           ? 'none'
           : 'border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease, background-color 1s ease',
@@ -165,7 +166,7 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
           transform: 'translateY(-1px)',
         },
         '&.dragging-row': { opacity: 0.36, transform: 'scale(0.98)', willChange: 'transform, opacity' },
-        '&.drop-target-row': { borderColor: '#4f46e5', bgcolor: '#f5f7ff', transform: 'none', boxShadow: '0 0 0 2px rgba(79, 70, 229, 0.12)', willChange: 'border-color, box-shadow' },
+        '&.drop-target-row': { borderColor: '#4f46e5', bgcolor: '#f5f7ff', transform: 'none', boxShadow: 'none' },
         '&.drop-before-row::before, &.drop-after-row::after': {
           content: '""',
           position: 'absolute',
@@ -175,10 +176,9 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
           zIndex: 5,
           borderRadius: 999,
           bgcolor: '#4f46e5',
-          boxShadow: '0 0 0 3px rgba(79, 70, 229, 0.12)',
         },
-        '&.drop-before-row::before': { top: -7 },
-        '&.drop-after-row::after': { bottom: -7 },
+        '&.drop-before-row::before': { top: 0 },
+        '&.drop-after-row::after': { bottom: 0 },
         '& .drop-position-indicator': {
           display: 'none',
           position: 'absolute',
@@ -196,10 +196,18 @@ const RoutingOrderCard = React.memo(function RoutingOrderCard({
           pointerEvents: 'none',
           boxShadow: '0 6px 16px rgba(79, 70, 229, 0.28)',
         },
-        '&.drop-target-row .drop-position-indicator': { display: 'block' },
-        '&.drop-before-row .drop-position-indicator': { top: -17 },
-        '&.drop-after-row .drop-position-indicator': { bottom: -17 },
-        '&.drop-confirm-row': { animation: 'dropConfirmRow 1100ms ease-out' },
+        '&.drop-target-row .drop-position-indicator, &.drop-confirm-row .drop-position-indicator': {
+          display: 'block',
+          animation: 'dropHintIn 120ms ease-out',
+        },
+        '&.drop-before-row .drop-position-indicator, &.drop-confirm-before .drop-position-indicator': { top: 8 },
+        '&.drop-after-row .drop-position-indicator, &.drop-confirm-after .drop-position-indicator': { bottom: 8 },
+        '&.drop-confirm-row': {
+          borderColor: '#06b6d4',
+          bgcolor: 'rgba(6, 182, 212, 0.08)',
+          boxShadow: 'none',
+        },
+        '&.drop-confirm-row .drop-position-indicator': { bgcolor: '#06b6d4' },
       }}
     >
       <Box data-drop-indicator className="drop-position-indicator" />
@@ -352,6 +360,8 @@ export default function RoutingBoard({
   selectedJobIds,
   highlightedJobIds,
   droppedJobIds,
+  onQuickMove,
+  quickMoveWorkCenters,
   lacquerColorMap,
   collapsedGroups,
   onToggleGroup,
@@ -533,7 +543,13 @@ export default function RoutingBoard({
                     const isCollapsed = collapsedGroups[collapseKey] ?? false;
 
                     return (
-                      <Box key={definition.id}>
+                      <Box
+                        key={definition.id}
+                        sx={{
+                          contentVisibility: 'auto',
+                          containIntrinsicSize: `auto ${Math.max(64, groupJobs.length * 164 + 44)}px`,
+                        }}
+                      >
                         <Box
                           role="button"
                           tabIndex={0}
@@ -666,6 +682,8 @@ export default function RoutingBoard({
         job={selectedJob ? currentJobById.get(selectedJob.id) ?? selectedJob : null}
         lacquerColorMap={lacquerColorMap}
         onClose={() => setSelectedJob(null)}
+        onQuickMove={onQuickMove}
+        workCenters={quickMoveWorkCenters}
       />
     </>
   );

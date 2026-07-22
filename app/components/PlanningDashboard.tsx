@@ -1,4 +1,5 @@
 'use client';
+'use client';
 
 import * as React from 'react';
 import NotificationSnackbar from './NotificationSnackbar';
@@ -8,6 +9,7 @@ import RoutingMatrix from './RoutingMatrix';
 import PlanningActionButtons from './PlanningActionButtons';
 import PlanningActionBar from './PlanningActionBar';
 import type { SequenceChange } from './PlanningGroupTable';
+import InteractiveDonutChart from './InteractiveDonutChart';
 import {
   Alert,
   AlertTitle,
@@ -15,6 +17,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Container,
   Divider,
   FormControl,
@@ -50,13 +53,25 @@ import {
   sortJobsWithZpg3dTransition,
 } from '@/lib/zpg1d-helpers';
 import type { PlanningDashboardData, PlanningJob } from '@/lib/planning';
+import { movePlanningJobs } from '@/lib/planning-move';
+import { findOperationPrecedenceViolation, formatOperationPrecedenceError } from '@/lib/operation-precedence';
 import {
-  allocateWorkOrdersToWorkCenters,
-  AUTO_WORK_CENTER_IDS,
-} from '@/lib/work-center-allocation';
+  rebaseHistoryAfterPartialSave,
+  rebaseJobsAfterPartialSave,
+  planningJobsStateEqual,
+  undoPlanningHistory,
+  type PlanningHistoryEntry,
+} from '@/lib/planning-history';
 
 const TARGET_WORK_CENTER_IDS = new Set(['111001', '111002', '111003', '111004', '111005']);
-const STATUS_FILTER_OPTIONS = ['NOT START', 'START', 'WAIT', 'DONE'] as const;
+const STATUS_FILTER_OPTIONS = ['NOT START', 'START', 'WAIT'] as const;
+const WORK_CENTER_QTY_COLORS: Record<string, string> = {
+  '111001': '#1e3a8a',
+  '111002': '#0e7490',
+  '111003': '#6d28d9',
+  '111004': '#78716c',
+  '111005': '#334155',
+};
 
 type Props = {
   data: PlanningDashboardData;
@@ -98,6 +113,17 @@ function getStatusColor(status: string) {
     default:
       return { color: '#6d28d9', bgcolor: '#ede9fe', borderColor: '#ddd6fe' };
   }
+}
+
+function getOperationPrecedenceError(jobs: PlanningJob[], affectedJobIds?: number[]) {
+  const affectedOrders = affectedJobIds
+    ? new Set(jobs.filter((job) => affectedJobIds.includes(job.id)).map((job) => job.aufnr))
+    : null;
+  const validationJobs = affectedOrders
+    ? jobs.filter((job) => affectedOrders.has(job.aufnr))
+    : jobs;
+  const violation = findOperationPrecedenceViolation(validationJobs);
+  return violation ? formatOperationPrecedenceError(violation) : null;
 }
 
 
@@ -257,6 +283,65 @@ function groupByWorkCenter(jobs: PlanningJob[]) {
     acc[job.arbpl].push(job);
     return acc;
   }, {});
+}
+
+function applyQuickMoveToJobs(
+  current: PlanningJob[],
+  jobId: number,
+  targetWorkCenter: string,
+  targetStartDate: string,
+  targetFinishDate: string,
+) {
+  const currentJob = current.find((job) => job.id === jobId);
+  if (!currentJob) return { jobs: current, affectedWorkCenters: new Set<string>() };
+
+  const moveResult = movePlanningJobs({
+    jobs: current,
+    draggedJobIds: [jobId],
+    targetWorkCenter,
+    resequence: false,
+    validatePrecedence: false,
+    patchJob: (job) => ({
+      ...job,
+      stdate: targetStartDate,
+      findate: targetFinishDate,
+    }),
+  });
+  const { affectedWorkCenters } = moveResult;
+  const reordered = moveResult.jobs;
+
+  // Use the exact same setup-aware sorter as Default Setting. Sorting only by
+  // date and the previous sequence can place a moved job differently from the
+  // production planning logic (material, dimensions, color, and L/Q grouping).
+  const sortedQueuesByWorkCenter = new Map<string, PlanningJob[]>();
+  for (const workCenter of affectedWorkCenters) {
+    const queue = sortJobsWithZpg3dTransition(
+      reordered.filter((job) => job.arbpl === workCenter),
+    )
+      .map((job, index) => ({ ...job, seqno: index + 1 }));
+    sortedQueuesByWorkCenter.set(workCenter, queue);
+  }
+
+  // Replace each affected Work Center in display order as well as updating its
+  // seqno. The dashboard groups jobs by their array order, so only changing the
+  // number would leave the moved job visually at the end of the queue.
+  const jobs = reordered.map((job) => {
+    const queue = sortedQueuesByWorkCenter.get(job.arbpl);
+    return queue?.shift() ?? job;
+  });
+
+  const violation = findOperationPrecedenceViolation(
+    jobs.filter((job) => job.aufnr === currentJob.aufnr),
+  );
+  if (violation) {
+    return {
+      jobs: current,
+      affectedWorkCenters: new Set<string>(),
+      validationError: formatOperationPrecedenceError(violation),
+    };
+  }
+
+  return { jobs, affectedWorkCenters };
 }
 
 function buildSequenceChangeMap(initialJobs: PlanningJob[], jobs: PlanningJob[]) {
@@ -482,10 +567,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
   const [jobs, setJobs] = React.useState(filteredRawJobs);
   const [initialJobs, setInitialJobs] = React.useState(filteredRawJobs);
-  const [isAllocatingWorkCenters, setIsAllocatingWorkCenters] = React.useState(false);
-  const [allocationSummary, setAllocationSummary] = React.useState<any>(null);
   const [isDefaultSettingProcessing, setIsDefaultSettingProcessing] = React.useState(false);
-  const [jobsHistory, setJobsHistory] = React.useState<{ state: PlanningJob[]; affectedJobIds: number[] }[]>([]);
+  const [jobsHistory, setJobsHistory] = React.useState<PlanningHistoryEntry[]>([]);
   const [highlightedJobIds, setHighlightedJobIds] = React.useState<Set<number>>(new Set());
   const [droppedJobIds, setDroppedJobIds] = React.useState<Set<number>>(new Set());
 
@@ -513,6 +596,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
   // Sync state if prop changes
   React.useEffect(() => {
+    jobsRef.current = filteredRawJobs;
     setJobs(filteredRawJobs);
     setInitialJobs(filteredRawJobs);
     setJobsHistory([]);
@@ -521,6 +605,10 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   const sortedWorkCenters = React.useMemo(
     () => [...filteredRawWorkCenters].sort((a, b) => a.arbpl.localeCompare(b.arbpl, 'th', { numeric: true })),
     [filteredRawWorkCenters],
+  );
+  const quickMoveWorkCenters = React.useMemo(
+    () => sortedWorkCenters.map((workCenter) => workCenter.arbpl),
+    [sortedWorkCenters],
   );
 
   const defaultWorkCenter = 'ALL';
@@ -642,6 +730,49 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     setSelectedWorkCenter(newWorkCenter);
   }, []);
 
+  const handleQuickMove = React.useCallback((
+    jobId: number,
+    targetWorkCenter: string,
+    targetStartDate: string,
+    targetFinishDate: string,
+  ) => {
+    const previousJobs = jobsRef.current;
+    const previousJob = previousJobs.find((job) => job.id === jobId);
+    if (!previousJob) throw new Error('Job not found');
+
+    const quickMove = applyQuickMoveToJobs(
+      previousJobs,
+      jobId,
+      targetWorkCenter,
+      targetStartDate,
+      targetFinishDate,
+    );
+    const optimisticJobs = quickMove.jobs;
+    if (quickMove.validationError) {
+      setSnackbar({
+        open: true,
+        message: quickMove.validationError,
+        severity: 'error',
+      });
+      return false;
+    }
+    if (planningJobsStateEqual(previousJobs, optimisticJobs)) return true;
+    const movedJob = optimisticJobs.find((job) => job.id === jobId);
+    pushToHistory([jobId]);
+    jobsRef.current = optimisticJobs;
+    setJobs(optimisticJobs);
+    setLastMovedJobIds([jobId]);
+    triggerDropHighlight([jobId]);
+    setSnackbar({
+      open: true,
+      message: previousJob.arbpl === targetWorkCenter
+        ? `จัด Seq ใหม่เป็น ${movedJob?.seqno ?? '-'} ตาม Start Date แล้ว — กรุณากดบันทึกเพื่อยืนยัน`
+        : `ย้าย Order ${previousJob.aufnr} ไป Work Center ${targetWorkCenter} และจัด Seq ใหม่เป็น ${movedJob?.seqno ?? '-'} แล้ว — กรุณากดบันทึกเพื่อยืนยัน`,
+      severity: 'info',
+    });
+    return true;
+  }, [pushToHistory, triggerDropHighlight]);
+
   const draggingJobIdRef = React.useRef<number | null>(null);
   const draggingElementsRef = React.useRef<HTMLElement[]>([]);
   const dragOverRowRef = React.useRef<HTMLElement | null>(null);
@@ -720,23 +851,27 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     });
   }, [jobs, deferredYear, deferredMonth, deferredOrderSearch]);
   const filteredJobs = React.useMemo(() => {
-    if (deferredStatuses.length === STATUS_FILTER_OPTIONS.length) return dateAndOrderFilteredJobs;
     const selectedStatusSet = new Set(deferredStatuses);
     return dateAndOrderFilteredJobs.filter((job) => selectedStatusSet.has(getStatusLabel(job.text1)));
   }, [dateAndOrderFilteredJobs, deferredStatuses]);
 
   const lacquerColorMap = React.useMemo(() => {
-    const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+    const group3ByLacquerKey = new Map<string, string | null>();
+    initialJobs.forEach((job) => {
+      const key = getLacquerKey(job);
+      if (!group3ByLacquerKey.has(key)) group3ByLacquerKey.set(key, job.zpg3d);
+    });
+    const lacquerKeys = Array.from(group3ByLacquerKey.keys()).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
 
     const map = new Map<string, ReturnType<typeof createLacquerColor>>();
     lacquerKeys.forEach((key, index) => {
-      const matchingJob = jobs.find((job) => getLacquerKey(job) === key);
-      const group3 = matchingJob ? matchingJob.zpg3d : null;
-      map.set(key, getLacquerColorByGroup3(group3, index));
+      map.set(key, getLacquerColorByGroup3(group3ByLacquerKey.get(key) ?? null, index));
     });
     return map;
-  }, [jobs]);
+  }, [initialJobs]);
   const routingOperationsByOrder = React.useMemo(() => {
+    if (deferredPlanningView !== 'table') return new Map<string, PlanningJob[]>();
+
     const byOrder = new Map<string, PlanningJob[]>();
     for (const job of [...jobs, ...externalRoutingJobs]) {
       const operations = byOrder.get(job.aufnr);
@@ -753,7 +888,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       });
     }
     return byOrder;
-  }, [externalRoutingJobs, jobs]);
+  }, [deferredPlanningView, externalRoutingJobs, jobs]);
   const externalRoutingJobIds = React.useMemo(
     () => new Set(externalRoutingJobs.map((job) => job.id)),
     [externalRoutingJobs],
@@ -822,7 +957,10 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           return !initJob ||
             job.id !== initJob.id ||
             job.zpg1d !== initJob.zpg1d ||
-            job.queueGroup !== initJob.queueGroup;
+            job.queueGroup !== initJob.queueGroup ||
+            job.stdate !== initJob.stdate ||
+            job.findate !== initJob.findate ||
+            job.seqno !== initJob.seqno;
         });
 
       dirtyMap.set(workCenter, isDirty);
@@ -856,9 +994,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   }, [hasDirtyChanges]);
 
   const markLastMovedJobs = React.useCallback((jobIds: number[]) => {
-    React.startTransition(() => {
-      setLastMovedJobIds(jobIds);
-    });
+    setLastMovedJobIds(jobIds);
   }, []);
 
   const saveAllDirty = React.useCallback(async () => {
@@ -870,7 +1006,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     setSavingAll(true);
     setSnackbar({ open: false, message: '', severity: 'success' });
 
-    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null; queueGroup: string | null; arbpl: string }> = [];
+    const itemsToSave: Array<{ id: number; seqno: number; zpg1d: string | null; queueGroup: string | null; arbpl: string; stdate: string | null; findate: string | null }> = [];
 
     for (const wc of workCentersToSave) {
       const wcJobs = jobs.filter((j) => j.arbpl === wc);
@@ -881,6 +1017,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           zpg1d: job.zpg1d,
           queueGroup: job.queueGroup,
           arbpl: job.arbpl,
+          stdate: job.stdate,
+          findate: job.findate,
         });
       });
     }
@@ -896,9 +1034,10 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       setSavingAll(false);
 
       if (!response.ok) {
+        const result = await response.json().catch(() => null) as { error?: string } | null;
         setSnackbar({
           open: true,
-          message: `บันทึกลำดับคิวล้มเหลว`,
+          message: result?.error || 'บันทึกลำดับคิวล้มเหลว',
           severity: 'error',
         });
         return;
@@ -917,6 +1056,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           : job
       ));
 
+      jobsRef.current = savedJobs;
       setJobs(savedJobs);
       setJobsHistory([]); // Clear history on save
       setInitialJobs(savedJobs);
@@ -959,23 +1099,21 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
       ['NOT START', 0],
       ['START', 0],
       ['WAIT', 0],
-      ['DONE', 0],
     ]);
     statusScopeJobs.forEach((job) => {
       const status = getStatusLabel(job.text1);
-      counts.set(status, (counts.get(status) ?? 0) + 1);
+      if (counts.has(status)) counts.set(status, (counts.get(status) ?? 0) + 1);
     });
 
     const preferredOrder = new Map([
       ['NOT START', 0],
       ['START', 1],
       ['WAIT', 2],
-      ['DONE', 3],
     ]);
     return Array.from(counts, ([status, count]) => ({ status, count }))
       .sort((a, b) =>
         (preferredOrder.get(a.status) ?? Number.MAX_SAFE_INTEGER) -
-          (preferredOrder.get(b.status) ?? Number.MAX_SAFE_INTEGER) ||
+        (preferredOrder.get(b.status) ?? Number.MAX_SAFE_INTEGER) ||
         a.status.localeCompare(b.status, 'th', { numeric: true }),
       );
   }, [statusScopeJobs]);
@@ -1009,6 +1147,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         const row = document.querySelector<HTMLTableRowElement>(`tr[data-job-id="${id}"]`);
         if (row) {
           row.classList.add('drop-confirm-row', placement === 'after' ? 'drop-confirm-after' : 'drop-confirm-before');
+          const indicator = row.querySelector<HTMLElement>('[data-drop-indicator]');
+          if (indicator) indicator.textContent = 'เพิ่งวางตรงนี้';
           rows.push(row);
         }
       });
@@ -1018,7 +1158,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         dropConfirmTimerRef.current = window.setTimeout(() => {
           clearDropConfirmation();
           dropConfirmTimerRef.current = null;
-        }, 1100);
+        }, 750);
       }
     });
   }, []);
@@ -1031,66 +1171,28 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
   ) => {
     if (draggedJobIds.includes(targetJobId)) return;
 
-    let reordered = false;
-    const draggedIdSet = new Set(draggedJobIds);
+    const moveResult = movePlanningJobs({
+      jobs: jobsRef.current,
+      draggedJobIds,
+      targetWorkCenter: workCenter,
+      targetJobId,
+      position,
+      patchJob: (job, targetJob) => ({
+        ...job,
+        queueGroup: targetJob && getQueueGroupId(targetJob) !== getJobGroupId(job.zpg1d)
+          ? targetJob.queueGroup?.trim() || targetJob.zpg1d
+          : null,
+      }),
+    });
+    if (moveResult.validationError) {
+      setSnackbar({ open: true, message: moveResult.validationError, severity: 'error' });
+      return;
+    }
+    if (!moveResult.moved || planningJobsStateEqual(jobsRef.current, moveResult.jobs)) return;
 
     pushToHistory(draggedJobIds);
-    setJobs((current) => {
-      const targetJobObj = current.find((j) => j.id === targetJobId);
-      if (!targetJobObj) return current;
-
-      const originalIndexById = new Map(current.map((job, index) => [job.id, index]));
-      const draggedJobs = current.filter((j) => draggedIdSet.has(j.id));
-      if (draggedJobs.length === 0) return current;
-
-      const next = current;
-
-      const workCenterIndexes = next
-        .map((job, index) => ({ job, index }))
-        .filter((item) => item.job.arbpl === workCenter);
-
-      const targetLocalIndex = workCenterIndexes.findIndex((item) => item.job.id === targetJobId);
-      if (targetLocalIndex < 0) return current;
-
-      const wcJobs = workCenterIndexes.map(item => item.job);
-      const filteredWcJobs = wcJobs.filter(job => !draggedIdSet.has(job.id));
-
-      const newTargetIndex = filteredWcJobs.findIndex(job => job.id === targetJobId);
-      if (newTargetIndex < 0) return current;
-
-      const insertIndex = newTargetIndex + (position === 'after' ? 1 : 0);
-
-      const orderedDraggedJobs = [...draggedJobs].map(job => {
-        return {
-          ...job,
-          arbpl: workCenter,
-          queueGroup: getQueueGroupId(targetJobObj) === getJobGroupId(job.zpg1d)
-            ? null
-            : targetJobObj.queueGroup?.trim() || targetJobObj.zpg1d,
-        };
-      }).sort((a, b) => {
-        return (originalIndexById.get(a.id) ?? 0) - (originalIndexById.get(b.id) ?? 0);
-      });
-
-      filteredWcJobs.splice(insertIndex, 0, ...orderedDraggedJobs);
-
-      const withoutDragged = next.filter(job => !draggedIdSet.has(job.id));
-      const firstWcIndex = withoutDragged.findIndex(job => job.arbpl === workCenter);
-      const withoutWcJobs = withoutDragged.filter(job => job.arbpl !== workCenter);
-
-      const newJobsList: typeof current = [];
-      if (firstWcIndex >= 0) {
-        newJobsList.push(...withoutWcJobs.slice(0, firstWcIndex));
-        newJobsList.push(...filteredWcJobs);
-        newJobsList.push(...withoutWcJobs.slice(firstWcIndex));
-      } else {
-        newJobsList.push(...withoutWcJobs);
-        newJobsList.push(...filteredWcJobs);
-      }
-
-      reordered = true;
-      return newJobsList;
-    });
+    jobsRef.current = moveResult.jobs;
+    setJobs(moveResult.jobs);
 
     showDropConfirmation(draggedJobIds, position);
     triggerDropHighlight(draggedJobIds);
@@ -1101,86 +1203,70 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     jobId: number,
     direction: 'up' | 'down',
   ) => {
-    let moved = false;
-    let targetIds: number[] = selectedJobIdsRef.current.has(jobId)
+    const targetIds = selectedJobIdsRef.current.has(jobId)
       ? Array.from(selectedJobIdsRef.current)
       : [jobId];
-
     setSnackbar((prev) => (prev.open ? { ...prev, open: false } : prev));
-    pushToHistory(targetIds);
-    setJobs((current) => {
-      const workCenterJobs = current.filter((job) => job.arbpl === workCenter);
+    const current = jobsRef.current;
+    const workCenterJobs = current.filter((job) => job.arbpl === workCenter);
+    const targetIndices = targetIds
+      .map((id) => workCenterJobs.findIndex((job) => job.id === id))
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right);
+    if (targetIndices.length === 0) return;
+    const movedJobIds = targetIndices.map((index) => workCenterJobs[index].id);
 
-      if (selectedJobIdsRef.current.has(jobId)) {
-        targetIds = Array.from(selectedJobIdsRef.current);
-      } else {
-        targetIds = [jobId];
-      }
-
-      const targetIndices = targetIds
-        .map(id => workCenterJobs.findIndex(j => j.id === id))
-        .filter(idx => idx >= 0)
-        .sort((a, b) => a - b);
-
-      if (targetIndices.length === 0) return current;
-
-      const firstIdx = targetIndices[0];
-      const lastIdx = targetIndices[targetIndices.length - 1];
-
-      if (direction === 'up') {
-        if (firstIdx === 0) return current;
-
-        const targetJobs = targetIndices.map(idx => ({ ...workCenterJobs[idx] }));
-        const remainingJobs = workCenterJobs.filter(job => !targetIds.includes(job.id));
-
-        remainingJobs.splice(firstIdx - 1, 0, ...targetJobs);
-
-        const neighborJob = remainingJobs[firstIdx];
-        if (neighborJob) {
-          targetJobs.forEach((job) => {
-            job.queueGroup = getQueueGroupId(neighborJob) === getJobGroupId(job.zpg1d)
-              ? null
-              : neighborJob.queueGroup?.trim() || neighborJob.zpg1d;
-          });
-        }
-
-        const queue = [...remainingJobs];
-        moved = true;
-        return current.map((job) => (job.arbpl === workCenter ? queue.shift() ?? job : job));
-      } else {
-        if (lastIdx === workCenterJobs.length - 1) return current;
-
-        const targetJobs = targetIndices.map(idx => ({ ...workCenterJobs[idx] }));
-        const itemBelow = workCenterJobs[lastIdx + 1];
-        const remainingJobs = workCenterJobs.filter(job => !targetIds.includes(job.id));
-
-        const itemBelowIndex = remainingJobs.findIndex(job => job.id === itemBelow.id);
-        if (itemBelowIndex < 0) return current;
-
-        remainingJobs.splice(itemBelowIndex + 1, 0, ...targetJobs);
-
-        targetJobs.forEach((job) => {
-          job.queueGroup = getQueueGroupId(itemBelow) === getJobGroupId(job.zpg1d)
-            ? null
-            : itemBelow.queueGroup?.trim() || itemBelow.zpg1d;
-        });
-
-        const queue = [...remainingJobs];
-        moved = true;
-        return current.map((job) => (job.arbpl === workCenter ? queue.shift() ?? job : job));
-      }
-    });
-
-    if (moved && targetIds.length > 0) {
-      markLastMovedJobs(targetIds);
-      showDropConfirmation(targetIds, direction === 'up' ? 'before' : 'after');
+    const firstIndex = targetIndices[0];
+    const lastIndex = targetIndices[targetIndices.length - 1];
+    if ((direction === 'up' && firstIndex === 0) ||
+        (direction === 'down' && lastIndex === workCenterJobs.length - 1)) {
+      setSnackbar({ open: true, message: 'ไม่สามารถเลื่อนต่อได้ เนื่องจากงานอยู่สุดขอบคิวแล้ว', severity: 'info' });
+      return;
     }
+
+    const targetJobs = targetIndices.map((index) => ({ ...workCenterJobs[index] }));
+    const remainingJobs = workCenterJobs.filter((job) => !movedJobIds.includes(job.id));
+    if (direction === 'up') {
+      remainingJobs.splice(firstIndex - 1, 0, ...targetJobs);
+      const neighborJob = remainingJobs[firstIndex];
+      if (neighborJob) {
+        targetJobs.forEach((job) => {
+          job.queueGroup = getQueueGroupId(neighborJob) === getJobGroupId(job.zpg1d)
+            ? null
+            : neighborJob.queueGroup?.trim() || neighborJob.zpg1d;
+        });
+      }
+    } else {
+      const itemBelow = workCenterJobs[lastIndex + 1];
+      const itemBelowIndex = remainingJobs.findIndex((job) => job.id === itemBelow.id);
+      if (itemBelowIndex < 0) return;
+      remainingJobs.splice(itemBelowIndex + 1, 0, ...targetJobs);
+      targetJobs.forEach((job) => {
+        job.queueGroup = getQueueGroupId(itemBelow) === getJobGroupId(job.zpg1d)
+          ? null
+          : itemBelow.queueGroup?.trim() || itemBelow.zpg1d;
+      });
+    }
+
+    const queue = [...remainingJobs];
+    const nextJobs = current.map((job) => (job.arbpl === workCenter ? queue.shift() ?? job : job));
+    const validationError = getOperationPrecedenceError(nextJobs, movedJobIds);
+    if (validationError) {
+      setSnackbar({ open: true, message: validationError, severity: 'error' });
+      return;
+    }
+    if (planningJobsStateEqual(current, nextJobs)) return;
+
+    pushToHistory(movedJobIds);
+    jobsRef.current = nextJobs;
+    setJobs(nextJobs);
+    markLastMovedJobs(movedJobIds);
+    showDropConfirmation(movedJobIds, direction === 'up' ? 'before' : 'after');
   }, [markLastMovedJobs, showDropConfirmation]);
 
   const applyAutoSequence = React.useCallback((workCenters: string[]) => {
     if (isDefaultSettingProcessing) return;
 
-    setAllocationSummary(null);
     setIsDefaultSettingProcessing(true);
     setSnackbar({
       open: true,
@@ -1252,50 +1338,6 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     }, 100);
   }, [initialJobs, isDefaultSettingProcessing]);
 
-  const applyAutoWorkCenterAllocation = React.useCallback(() => {
-    if (isAllocatingWorkCenters) return;
-
-    const sourceJobs = jobs;
-    setIsAllocatingWorkCenters(true);
-    setAllocationSummary(null);
-    setSnackbar({
-      open: true,
-      message: 'กำลังทดลองจัด Work Order ลงเครื่อง 01, 03, 04 และ 05…',
-      severity: 'info',
-    });
-
-    window.setTimeout(() => {
-      try {
-        const { jobs: allocatedJobs, summary } = allocateWorkOrdersToWorkCenters(
-          sourceJobs,
-          AUTO_WORK_CENTER_IDS,
-        );
-        const savedChangeovers = summary.beforeChangeovers - summary.afterChangeovers;
-        pushToHistory();  // Auto-allocate affects all jobs
-        setJobs(allocatedJobs);
-        setAllocationSummary(summary);
-        setSelectedWorkCenter('ALL');
-        setSelectedJobIds(new Set());
-        setLastMovedJobIds([]);
-        setSnackbar({
-          open: true,
-          message: savedChangeovers > 0
-            ? `ทดลองจัด WC แล้ว: ลดการเปลี่ยน L/Q ได้ ${savedChangeovers} ครั้ง — ยังไม่บันทึกลง DB`
-            : `ทดลองจัด WC แล้ว: การเปลี่ยน L/Q ${summary.afterChangeovers} ครั้ง — ยังไม่บันทึกลง DB`,
-          severity: savedChangeovers > 0 ? 'success' : 'info',
-        });
-      } catch (error) {
-        setSnackbar({
-          open: true,
-          message: 'เกิดข้อผิดพลาดในการจัดเครื่องจักรอัตโนมัติ: ' + (error instanceof Error ? error.message : String(error)),
-          severity: 'error',
-        });
-      } finally {
-        setIsAllocatingWorkCenters(false);
-      }
-    }, 100);
-  }, [jobs, isAllocatingWorkCenters]);
-
   const saveSequence = React.useCallback(async (workCenter: string) => {
     setSavingWorkCenter(workCenter);
     setSnackbar((prev) => ({ ...prev, open: false }));
@@ -1319,6 +1361,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           zpg1d: job.zpg1d,
           queueGroup: job.queueGroup,
           arbpl: job.arbpl,
+          stdate: job.stdate,
+          findate: job.findate,
         })),
     );
 
@@ -1333,9 +1377,10 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     setSavingWorkCenter(null);
 
     if (!response.ok) {
+      const result = await response.json().catch(() => null) as { error?: string } | null;
       setSnackbar({
         open: true,
-        message: `บันทึกลำดับของ ${workCenter} ไม่สำเร็จ`,
+        message: result?.error || `บันทึกลำดับของ ${workCenter} ไม่สำเร็จ`,
         severity: 'error',
       });
       return;
@@ -1352,10 +1397,20 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         ? { ...job, seqno: nextSequenceById.get(job.id) ?? job.seqno }
         : job
     ));
+    const nextInitialJobs = rebaseJobsAfterPartialSave(
+      initialJobs,
+      savedJobs,
+      affectedWorkCenters,
+    );
 
+    jobsRef.current = savedJobs;
     setJobs(savedJobs);
-    setJobsHistory([]);
-    setInitialJobs(savedJobs);
+    setJobsHistory((history) => rebaseHistoryAfterPartialSave(
+      history,
+      savedJobs,
+      affectedWorkCenters,
+    ));
+    setInitialJobs(nextInitialJobs);
     setSelectedJobIds(new Set());
     setLastMovedJobIds([]);
 
@@ -1366,7 +1421,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         : `บันทึกลำดับของ ${workCenter} ลงฐานข้อมูลแล้ว`,
       severity: 'success',
     });
-  }, [jobs, sequenceChanges]);
+  }, [initialJobs, jobs, sequenceChanges]);
 
   const clearDragClasses = React.useCallback(() => {
     dragOverRowRef.current?.classList.remove('drop-target-row', 'drop-before-row', 'drop-after-row');
@@ -1404,6 +1459,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
 
       if (scrollDelta !== 0) {
         scrollElement.scrollTop += scrollDelta;
+        dragOverRowRectRef.current = null;
       }
     }
 
@@ -1427,6 +1483,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
         wheelEvent.preventDefault();
         scrollElement.scrollTop += wheelEvent.deltaY * dragWheelScrollMultiplier;
         scrollElement.scrollLeft += wheelEvent.deltaX;
+        dragOverRowRectRef.current = null;
       };
       window.addEventListener('wheel', dragWheelScrollListenerRef.current, { capture: true, passive: false });
     }
@@ -1585,28 +1642,31 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     }
 
     if (draggedIds.length > 0) {
+      const moveResult = movePlanningJobs({
+        jobs: jobsRef.current,
+        draggedJobIds: draggedIds,
+        targetWorkCenter: workCenter,
+      });
+      if (moveResult.validationError) {
+        setSnackbar({ open: true, message: moveResult.validationError, severity: 'error' });
+        draggingJobIdRef.current = null;
+        stopDragAutoScroll();
+        clearDragClasses();
+        clearDraggingElements();
+        return;
+      }
+      if (!moveResult.moved || planningJobsStateEqual(jobsRef.current, moveResult.jobs)) {
+        draggingJobIdRef.current = null;
+        stopDragAutoScroll();
+        clearDragClasses();
+        clearDraggingElements();
+        return;
+      }
+
       markLastMovedJobs(draggedIds);
       pushToHistory(draggedIds);
-      setJobs((current) => {
-        const draggedIdSet = new Set(draggedIds);
-        const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
-        if (draggedJobs.length === 0) return current;
-
-        const remaining = current.filter((job) => !draggedIdSet.has(job.id));
-        const targetJobs = remaining.filter((job) => job.arbpl === workCenter);
-        const movedJobs = draggedJobs.map((job) => ({ ...job, arbpl: workCenter }));
-        const firstTargetIndex = remaining.findIndex((job) => job.arbpl === workCenter);
-        const jobsOutsideTarget = remaining.filter((job) => job.arbpl !== workCenter);
-        const insertAt = firstTargetIndex < 0
-          ? jobsOutsideTarget.length
-          : remaining
-            .slice(0, firstTargetIndex)
-            .filter((job) => job.arbpl !== workCenter).length;
-
-        const next = [...jobsOutsideTarget];
-        next.splice(insertAt, 0, ...targetJobs, ...movedJobs);
-        return next;
-      });
+      jobsRef.current = moveResult.jobs;
+      setJobs(moveResult.jobs);
       showDropConfirmation(draggedIds, 'after');
       triggerDropHighlight(draggedIds);
     }
@@ -1634,51 +1694,71 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
     }
 
     if (draggedIds.length > 0) {
-      markLastMovedJobs(draggedIds);
+      const current = jobsRef.current;
+      const draggedIdSet = new Set(draggedIds);
+      const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
+      if (draggedJobs.length === 0) {
+        draggingJobIdRef.current = null;
+        stopDragAutoScroll();
+        clearDragClasses();
+        clearDraggingElements();
+        return;
+      }
+
+      const remaining = current.filter((job) => !draggedIdSet.has(job.id));
+      const targetWorkCenterJobs = remaining.filter((job) => job.arbpl === workCenter);
+      const targetGroupId = getJobGroupId(groupLabel);
+      const targetGroupOrder = getJobGroupSortOrder(groupLabel);
+      const lastJobInGroup = targetWorkCenterJobs.reduce(
+        (lastIndex, job, index) => getQueueGroupId(job) === targetGroupId ? index : lastIndex,
+        -1,
+      );
+      const firstLaterGroup = targetWorkCenterJobs.findIndex(
+        (job) => getQueueGroupSortOrder(job) > targetGroupOrder,
+      );
+      const insertInWorkCenterAt = lastJobInGroup >= 0
+        ? lastJobInGroup + 1
+        : firstLaterGroup >= 0
+          ? firstLaterGroup
+          : targetWorkCenterJobs.length;
+      const movedJobs = draggedJobs.map((job) => ({
+        ...job,
+        arbpl: workCenter,
+        queueGroup: getJobGroupId(job.zpg1d) === targetGroupId ? null : groupLabel,
+      }));
+      targetWorkCenterJobs.splice(insertInWorkCenterAt, 0, ...movedJobs);
+
+      const firstTargetIndex = current.findIndex((job) => job.arbpl === workCenter);
+      const jobsOutsideTarget = remaining.filter((job) => job.arbpl !== workCenter);
+      const insertAt = firstTargetIndex < 0
+        ? jobsOutsideTarget.length
+        : current
+          .slice(0, firstTargetIndex)
+          .filter((job) => job.arbpl !== workCenter && !draggedIdSet.has(job.id))
+          .length;
+      const nextJobs = [...jobsOutsideTarget];
+      nextJobs.splice(insertAt, 0, ...targetWorkCenterJobs);
+      const validationError = getOperationPrecedenceError(nextJobs, draggedIds);
+      if (validationError) {
+        setSnackbar({ open: true, message: validationError, severity: 'error' });
+        draggingJobIdRef.current = null;
+        stopDragAutoScroll();
+        clearDragClasses();
+        clearDraggingElements();
+        return;
+      }
+      if (planningJobsStateEqual(current, nextJobs)) {
+        draggingJobIdRef.current = null;
+        stopDragAutoScroll();
+        clearDragClasses();
+        clearDraggingElements();
+        return;
+      }
+
       pushToHistory(draggedIds);
-      setJobs((current) => {
-        const draggedIdSet = new Set(draggedIds);
-        const draggedJobs = current.filter((job) => draggedIdSet.has(job.id));
-        if (draggedJobs.length === 0) return current;
-
-        const remaining = current.filter((job) => !draggedIdSet.has(job.id));
-        const targetWorkCenterJobs = remaining.filter((job) => job.arbpl === workCenter);
-        const targetGroupId = getJobGroupId(groupLabel);
-        const targetGroupOrder = getJobGroupSortOrder(groupLabel);
-        const lastJobInGroup = targetWorkCenterJobs.reduce(
-          (lastIndex, job, index) => (
-            getQueueGroupId(job) === targetGroupId ? index : lastIndex
-          ),
-          -1,
-        );
-        const firstLaterGroup = targetWorkCenterJobs.findIndex(
-          (job) => getQueueGroupSortOrder(job) > targetGroupOrder,
-        );
-        const insertInWorkCenterAt = lastJobInGroup >= 0
-          ? lastJobInGroup + 1
-          : firstLaterGroup >= 0
-            ? firstLaterGroup
-            : targetWorkCenterJobs.length;
-        const movedJobs = draggedJobs.map((job) => ({
-          ...job,
-          arbpl: workCenter,
-          queueGroup: getJobGroupId(job.zpg1d) === targetGroupId ? null : groupLabel,
-        }));
-
-        targetWorkCenterJobs.splice(insertInWorkCenterAt, 0, ...movedJobs);
-
-        const firstTargetIndex = current.findIndex((job) => job.arbpl === workCenter);
-        const jobsOutsideTarget = remaining.filter((job) => job.arbpl !== workCenter);
-        const insertAt = firstTargetIndex < 0
-          ? jobsOutsideTarget.length
-          : current
-            .slice(0, firstTargetIndex)
-            .filter((job) => job.arbpl !== workCenter && !draggedIdSet.has(job.id))
-            .length;
-        const next = [...jobsOutsideTarget];
-        next.splice(insertAt, 0, ...targetWorkCenterJobs);
-        return next;
-      });
+      jobsRef.current = nextJobs;
+      setJobs(nextJobs);
+      markLastMovedJobs(draggedIds);
       showDropConfirmation(draggedIds, 'after');
       triggerDropHighlight(draggedIds);
     }
@@ -1721,17 +1801,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
               }}
             >
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary', minWidth: 160 }}>
-                <Box
-                  component="img"
-                  src="/machine.svg"
-                  alt="machines"
-                  sx={{
-                    width: 18,
-                    height: 18,
-                    display: 'block',
-                    filter: 'invert(27%) sepia(91%) saturate(2453%) hue-rotate(232deg) brightness(88%) contrast(92%)',
-                  }}
-                />
+
                 <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: '0.02em' }}>
                   เครื่องจักร (Machines):
                 </Typography>
@@ -1824,8 +1894,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           src="/machine.svg"
                           alt="machine"
                           sx={{
-                            width: 16,
-                            height: 16,
+                            width: 20,
+                            height: 20,
                             display: 'block',
                             opacity: isSelected ? 1 : 0.65,
                             filter: isSelected ? 'brightness(0) invert(1)' : 'none',
@@ -2198,6 +2268,7 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           );
                         })}
                       </Box>
+
                     </Box>
 
                     <Divider sx={{ my: 0.5 }} />
@@ -2265,87 +2336,97 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                       โหลดงานตาม Work center
                     </Typography>
                     <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 650 }}>
-                      เปรียบเทียบจำนวนงานและ Order Qty กับ Work Center ที่มีค่าสูงสุด
+                      เปรียบเทียบจำนวนงานและ Order Qty พร้อมสัดส่วน QTY รวมทุก Work Center
                     </Typography>
                   </Box>
-                  <Stack spacing={2}>
-                    {(() => {
-                      const maxJobsCount = Math.max(
-                        ...sortedWorkCenters.map((item) => (groupedJobs[item.arbpl] ?? []).length),
-                        0
-                      );
-                      const maxOrderQuantity = Math.max(
-                        ...sortedWorkCenters.map((item) =>
-                          (groupedJobs[item.arbpl] ?? []).reduce((sum, job) => sum + job.mgvrg, 0),
-                        ),
-                        0,
-                      );
+                  {(() => {
+                    const workCenterLoads = sortedWorkCenters.map((item) => {
+                      const filteredGroup = groupedJobs[item.arbpl] ?? [];
+                      return {
+                        ...item,
+                        jobCount: filteredGroup.length,
+                        orderQuantity: filteredGroup.reduce((sum, job) => sum + job.mgvrg, 0),
+                        color: WORK_CENTER_QTY_COLORS[item.arbpl] ?? '#64748b',
+                      };
+                    });
+                    const maxJobsCount = Math.max(...workCenterLoads.map((item) => item.jobCount), 0);
+                    const maxOrderQuantity = Math.max(...workCenterLoads.map((item) => item.orderQuantity), 0);
+                    const totalOrderQuantity = workCenterLoads.reduce((total, item) => total + item.orderQuantity, 0);
+                    return (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 320px' }, gap: { xs: 2.5, lg: 3 } }}>
+                        <Stack spacing={2}>
+                          {workCenterLoads.map((item) => {
+                            const jobPercent = maxJobsCount > 0 ? (item.jobCount / maxJobsCount) * 100 : 0;
+                            const orderQuantityPercent = maxOrderQuantity > 0 ? (item.orderQuantity / maxOrderQuantity) * 100 : 0;
 
-                      return sortedWorkCenters.map((item) => {
-                        const filteredGroup = groupedJobs[item.arbpl] ?? [];
-                        const jobCount = filteredGroup.length;
-                        const orderQuantity = filteredGroup.reduce((sum, job) => sum + job.mgvrg, 0);
-                        const jobPercent = maxJobsCount > 0 ? (jobCount / maxJobsCount) * 100 : 0;
-                        const orderQuantityPercent = maxOrderQuantity > 0 ? (orderQuantity / maxOrderQuantity) * 100 : 0;
+                            return (
+                              <Box key={item.arbpl}>
+                                <Typography variant="body2" sx={{ mb: 0.8, fontWeight: 900, color: 'text.primary' }}>
+                                  เครื่องจักร {item.arbpl}
+                                </Typography>
+                                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: { xs: 1, sm: 1.5 } }}>
+                                  <Box>
+                                    <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center' }}>
+                                      <Typography variant="caption" sx={{ color: '#4f46e5', fontWeight: 850 }}>จำนวนงาน</Typography>
+                                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
+                                        {formatNumber(item.jobCount)} งาน
+                                      </Typography>
+                                    </Stack>
+                                    <LinearProgress
+                                      variant="determinate"
+                                      value={Math.min(jobPercent, 100)}
+                                      sx={{
+                                        height: 9,
+                                        borderRadius: 999,
+                                        bgcolor: 'rgba(79, 70, 229, 0.08)',
+                                        '& .MuiLinearProgress-bar': { backgroundColor: '#4f46e5', borderRadius: 999 },
+                                      }}
+                                    />
+                                  </Box>
+                                  <Box>
+                                    <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center', gap: 1 }}>
+                                      <Typography variant="caption" sx={{ color: '#0891b2', fontWeight: 850 }}>ORDER QTY</Typography>
+                                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
+                                        {formatNumber(item.orderQuantity)}
+                                      </Typography>
+                                    </Stack>
+                                    <LinearProgress
+                                      variant="determinate"
+                                      value={Math.min(orderQuantityPercent, 100)}
+                                      sx={{
+                                        height: 9,
+                                        borderRadius: 999,
+                                        bgcolor: 'rgba(8, 145, 178, 0.1)',
+                                        '& .MuiLinearProgress-bar': { backgroundColor: '#0891b2', borderRadius: 999 },
+                                      }}
+                                    />
+                                  </Box>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Stack>
 
-                        return (
-                          <Box key={item.arbpl}>
-                            <Typography variant="body2" sx={{ mb: 0.8, fontWeight: 900, color: 'text.primary' }}>
-                              เครื่องจักร {item.arbpl}
-                            </Typography>
-                            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: { xs: 1, sm: 1.5 } }}>
-                              <Box>
-                                <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center' }}>
-                                  <Typography variant="caption" sx={{ color: '#4f46e5', fontWeight: 850 }}>
-                                    จำนวนงาน
-                                  </Typography>
-                                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
-                                    {formatNumber(jobCount)} งาน ({jobPercent.toFixed(0)}%)
-                                  </Typography>
-                                </Stack>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={Math.min(jobPercent, 100)}
-                                  sx={{
-                                    height: 9,
-                                    borderRadius: 999,
-                                    bgcolor: 'rgba(79, 70, 229, 0.08)',
-                                    '& .MuiLinearProgress-bar': {
-                                      backgroundColor: '#4f46e5',
-                                      borderRadius: 999,
-                                    },
-                                  }}
-                                />
-                              </Box>
-                              <Box>
-                                <Stack direction="row" sx={{ justifyContent: 'space-between', mb: 0.45, alignItems: 'center' }}>
-                                  <Typography variant="caption" sx={{ color: '#0891b2', fontWeight: 850 }}>
-                                    ORDER QTY
-                                  </Typography>
-                                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 750 }}>
-                                    {formatNumber(orderQuantity)} ({orderQuantityPercent.toFixed(0)}%)
-                                  </Typography>
-                                </Stack>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={Math.min(orderQuantityPercent, 100)}
-                                  sx={{
-                                    height: 9,
-                                    borderRadius: 999,
-                                    bgcolor: 'rgba(8, 145, 178, 0.1)',
-                                    '& .MuiLinearProgress-bar': {
-                                      backgroundColor: '#0891b2',
-                                      borderRadius: 999,
-                                    },
-                                  }}
-                                />
-                              </Box>
-                            </Box>
-                          </Box>
-                        );
-                      });
-                    })()}
-                  </Stack>
+                        <Box sx={{ borderLeft: { lg: '1px solid #e2e8f0' }, borderTop: { xs: '1px solid #e2e8f0', lg: 0 }, pl: { lg: 3 }, pt: { xs: 2.5, lg: 0 } }}>
+                          <Typography sx={{ color: '#334155', fontSize: '0.78rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
+                            สัดส่วน ORDER QTY
+                          </Typography>
+                          <InteractiveDonutChart
+                            data={workCenterLoads.map((item) => ({
+                              id: item.arbpl,
+                              label: item.arbpl,
+                              value: item.orderQuantity,
+                              color: item.color,
+                              jobCount: item.jobCount,
+                            }))}
+                            selectedValue={selectedWorkCenter}
+                            onSelect={setSelectedWorkCenter}
+                            totalValue={totalOrderQuantity}
+                          />
+                        </Box>
+                      </Box>
+                    );
+                  })()}
                 </Paper>
               </Stack>
             </Box>
@@ -2412,29 +2493,29 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   </Box>
 
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: { xs: 'space-between', md: 'initial' } }}>
-                    <Box sx={{ borderRight: '1px solid rgba(15, 23, 42, 0.08)', pr: 2, mr: 1, display: { xs: 'none', sm: 'block' } }}>
-                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        จัดการแผน
-                      </Typography>
-                      <Typography variant="caption" sx={{ display: 'block', color: '#172033', fontWeight: 900 }}>
-                        {deferredWorkCenter === 'ALL' ? 'ทุก Work Center' : 'WC ' + deferredWorkCenter}
-                      </Typography>
-                    </Box>
                     <PlanningActionButtons
                       isDirty={visibleWorkCenters.some((item) => dirtyWorkCenters.get(item.arbpl) ?? false)}
                       isSaving={savingAll || savingWorkCenter !== null}
-                      isAllocating={isAllocatingWorkCenters}
                       isSequencing={isDefaultSettingProcessing}
                       onAutoSequence={() => {
                         applyAutoSequence(visibleWorkCenters.map((item) => item.arbpl));
                       }}
-                      onAutoAllocate={applyAutoWorkCenterAllocation}
                       onSave={() => {
                         if (deferredWorkCenter === 'ALL') {
                           void saveAllDirty();
                         } else {
                           void saveSequence(deferredWorkCenter);
                         }
+                      }}
+                      onExport={() => {
+                        const params = new URLSearchParams({
+                          orderSearch: deferredOrderSearch,
+                          year: String(deferredYear),
+                          month: String(deferredMonth),
+                          statuses: deferredStatuses.join(','),
+                          workCenter: deferredWorkCenter === 'ALL' ? '' : (deferredWorkCenter || ''),
+                        });
+                        window.location.href = `/api/jobs/export-excel?${params.toString()}`;
                       }}
                     />
                   </Stack>
@@ -2629,38 +2710,6 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
               );
             })()}
 
-            {allocationSummary && (
-              <Alert
-                severity="success"
-                variant="outlined"
-                sx={{
-                  mb: 2.5,
-                  borderRadius: 2,
-                  bgcolor: 'rgba(46, 125, 50, 0.03)',
-                  borderColor: 'rgba(46, 125, 50, 0.25)',
-                  '& .MuiAlert-icon': { color: '#2e7d32' },
-                }}
-              >
-                <AlertTitle sx={{ fontWeight: 850, color: '#2e7d32', mb: 1, fontSize: '0.92rem' }}>
-                  ผลการจำลองการจัด Work Center อัตโนมัติ (ยังไม่ได้บันทึก)
-                </AlertTitle>
-                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
-                  ลดการเปลี่ยน L/Q จาก {formatNumber(allocationSummary.beforeChangeovers)} เหลือ {formatNumber(allocationSummary.afterChangeovers)} ครั้ง
-                  {' '}(ลดลง {formatNumber(Math.max(0, allocationSummary.beforeChangeovers - allocationSummary.afterChangeovers))} ครั้ง), ย้าย {formatNumber(allocationSummary.movedOrders)} Work Orders
-                </Typography>
-                <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
-                  {allocationSummary.workCenters.map((item: any) => (
-                    <Chip
-                      key={item.workCenter}
-                      size="small"
-                      label={`${item.workCenter.slice(-2)}: ${item.orders} orders / ${formatNumber(item.hours)}h / ${item.changeovers} L/Q`}
-                      sx={{ fontSize: '0.72rem', fontWeight: 800, borderRadius: 1 }}
-                    />
-                  ))}
-                </Stack>
-              </Alert>
-            )}
-
             <Box
               sx={{
                 opacity: isWorkCenterPending || planningView !== deferredPlanningView ? 0.6 : 1,
@@ -2681,6 +2730,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   selectedJobIds={selectedJobIds}
                   highlightedJobIds={highlightedJobIds}
                   droppedJobIds={droppedJobIds}
+                  onQuickMove={handleQuickMove}
+                  quickMoveWorkCenters={quickMoveWorkCenters}
                   lacquerColorMap={lacquerColorMap}
                   collapsedGroups={collapsedGroups}
                   onToggleGroup={toggleGroupCollapse}
@@ -2703,6 +2754,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                   selectedJobIds={selectedJobIds}
                   highlightedJobIds={highlightedJobIds}
                   droppedJobIds={droppedJobIds}
+                  onQuickMove={handleQuickMove}
+                  quickMoveWorkCenters={quickMoveWorkCenters}
                   lacquerColorMap={lacquerColorMap}
                   collapsedGroups={collapsedGroups}
                   onToggleGroup={toggleGroupCollapse}
@@ -2735,6 +2788,8 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           sequenceChanges={sequenceChanges}
                           highlightedJobIds={highlightedJobIds}
                           droppedJobIds={droppedJobIds}
+                          onQuickMove={handleQuickMove}
+                          workCenters={quickMoveWorkCenters}
                           onToggleSelect={handleToggleSelect}
                           onToggleSelectAllGroup={handleToggleSelectAllGroup}
                           onToggleCollapse={toggleGroupCollapse}
@@ -2764,17 +2819,13 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
           <PlanningActionBar
             isSaving={savingAll || savingWorkCenter !== null || isDefaultSettingProcessing}
             onReset={() => {
-              if (jobsHistory.length > 0) {
-                const historyEntry = jobsHistory[jobsHistory.length - 1];
-                const previousState = historyEntry.state;
-                const storedIds = historyEntry.affectedJobIds;
+              const undoResult = undoPlanningHistory(jobsRef.current, initialJobs, jobsHistory);
+              setJobsHistory(undoResult.history);
+              jobsRef.current = undoResult.jobs;
+              setJobs(undoResult.jobs);
 
-                setJobsHistory((prev) => prev.slice(0, -1));
-                setJobs(previousState);
-
-                // Highlight only the specific jobs that were affected by the action
-                if (storedIds.length > 0) {
-                  const changedIds = new Set<number>(storedIds);
+              if (undoResult.affectedJobIds.length > 0) {
+                  const changedIds = new Set<number>(undoResult.affectedJobIds);
                   setHighlightedJobIds(changedIds);
                   window.setTimeout(() => {
                     setHighlightedJobIds((prev) => {
@@ -2783,21 +2834,15 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                       return next;
                     });
                   }, 1000);
-                }
-
-                setSnackbar({
-                  open: true,
-                  message: 'ย้อนกลับการทำรายการล่าสุดเรียบร้อยแล้ว (Undo)',
-                  severity: 'info',
-                });
-              } else {
-                setJobs(initialJobs);
-                setSnackbar({
-                  open: true,
-                  message: 'คืนค่าเป็นแผนเริ่มต้นเรียบร้อยแล้ว (Undo ทั้งหมด)',
-                  severity: 'info',
-                });
               }
+
+              setSnackbar({
+                open: true,
+                message: undoResult.changed
+                  ? `ย้อนกลับการทำรายการล่าสุดแล้ว${undoResult.affectedJobIds.length > 1 ? ` (${undoResult.affectedJobIds.length} OP)` : ''}`
+                  : 'ไม่มีรายการที่สามารถ Undo เพิ่มได้',
+                severity: 'info',
+              });
             }}
             resetLabel="UNDO"
             onSave={saveAllDirty}

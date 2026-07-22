@@ -1,11 +1,11 @@
 'use client';
 import * as React from 'react';
-import { Box, Checkbox, Chip, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Checkbox, Chip, Collapse, Paper, Stack, Tooltip, Typography } from '@mui/material';
 import { HambergerMenu } from 'iconsax-react';
 import type { PlanningJob, WorkCenterSummary } from '@/lib/planning';
 import { cleanZpg2d, getQueueGroupId, ZPG1D_GROUPS } from '@/lib/zpg1d-helpers';
 import { FinishDateWarningIcon, isFinishDateWithinWarningWindow } from './FinishDateWarning';
-import JobDetailDialog from './JobDetailDialog';
+import JobDetailDialog, { type QuickMoveHandler } from './JobDetailDialog';
 
 type LacquerColor = { bg: string; chipBg: string; text: string; border: string };
 
@@ -17,6 +17,8 @@ type RoutingMatrixProps = {
   selectedJobIds: Set<number>;
   highlightedJobIds?: Set<number>;
   droppedJobIds?: Set<number>;
+  onQuickMove: QuickMoveHandler;
+  quickMoveWorkCenters: string[];
   lacquerColorMap: Map<string, LacquerColor>;
   collapsedGroups: Record<string, boolean>;
   onToggleGroup: (key: string) => void;
@@ -63,7 +65,7 @@ function getStatusStyle(status: string | null) {
     case 'START':
       return { color: '#0369a1', bgcolor: '#f0f9ff', borderColor: '#bae6fd' };
     case 'WAIT':
-      return { color: '#b45309', bgcolor: '#fffbeb', borderColor: '#fde68a' };
+      return { color: '#854d0e', bgcolor: '#fef9c3', borderColor: '#eab308' };
     default:
       return { color: '#64748b', bgcolor: '#f8fafc', borderColor: '#e2e8f0' };
   }
@@ -104,9 +106,11 @@ const MatrixOperation = React.memo(function MatrixOperation({
   const hasWhiteLacquer = isWhiteLacquer(job);
   const cardShadow = selected
     ? '0 0 0 2px rgba(99, 102, 241, 0.1)'
-    : '0 2px 6px rgba(15, 23, 42, 0.04)';
+    : 'none';
   const visibleCardShadow = hasWhiteLacquer
-    ? `inset 1px 0 0 #94a3b8, ${cardShadow}`
+    ? selected
+      ? `inset 1px 0 0 #94a3b8, ${cardShadow}`
+      : 'inset 1px 0 0 #94a3b8'
     : cardShadow;
   const hoverShadow = hasWhiteLacquer
     ? 'inset 1px 0 0 #94a3b8, 0 3px 8px rgba(15, 23, 42, 0.06)'
@@ -123,6 +127,16 @@ const MatrixOperation = React.memo(function MatrixOperation({
       onDragOver={(event) => {
         event.stopPropagation();
         onDragOverJob(event, job.id);
+        const position = event.currentTarget.classList.contains('drop-after-row') ? 'after' : 'before';
+        if (event.currentTarget.dataset.dropPosition !== position) {
+          event.currentTarget.dataset.dropPosition = position;
+          const indicator = event.currentTarget.querySelector<HTMLElement>('[data-drop-indicator]');
+          if (indicator) {
+            indicator.textContent = position === 'after'
+              ? `วางต่อท้ายลำดับ ${String(sequence).padStart(2, '0')}`
+              : `แทรกก่อนลำดับ ${String(sequence).padStart(2, '0')}`;
+          }
+        }
       }}
       onDragLeave={onDragLeaveJob}
       onDrop={(event) => {
@@ -133,7 +147,7 @@ const MatrixOperation = React.memo(function MatrixOperation({
       sx={{
         position: 'relative',
         contentVisibility: 'auto',
-        containIntrinsicSize: '112px',
+        containIntrinsicSize: 'auto 112px',
         p: 0.85,
         borderRadius: 1.5,
         border: '1px solid',
@@ -156,7 +170,7 @@ const MatrixOperation = React.memo(function MatrixOperation({
         '&:active': { cursor: 'grabbing' },
         '&:hover': { borderColor: '#6366f1', borderLeftColor: hasWhiteLacquer ? '#ffffff' : lacquerColor.text, boxShadow: hoverShadow },
         '&.dragging-row': { opacity: 0.42, transform: 'scale(0.985)', willChange: 'opacity, transform' },
-        '&.drop-target-row': { willChange: 'border-color, box-shadow' },
+        '&.drop-target-row': { bgcolor: '#f5f7ff', borderColor: '#4f46e5' },
         '&.drop-before-row': { borderTopColor: '#4f46e5' },
         '&.drop-after-row': { borderBottomColor: '#4f46e5' },
         '&.drop-before-row::before, &.drop-after-row::after': {
@@ -168,10 +182,40 @@ const MatrixOperation = React.memo(function MatrixOperation({
           borderRadius: 999,
           bgcolor: '#4f46e5',
         },
-        '&.drop-before-row::before': { top: -4 },
-        '&.drop-after-row::after': { bottom: -4 },
+        '&.drop-before-row::before': { top: 0 },
+        '&.drop-after-row::after': { bottom: 0 },
+        '& .drop-position-indicator': {
+          display: 'none',
+          position: 'absolute',
+          left: 8,
+          zIndex: 8,
+          px: 0.8,
+          py: 0.3,
+          borderRadius: 0.9,
+          bgcolor: '#4f46e5',
+          color: '#ffffff',
+          fontSize: '0.66rem',
+          lineHeight: 1.2,
+          fontWeight: 900,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
+        },
+        '&.drop-target-row .drop-position-indicator, &.drop-confirm-row .drop-position-indicator': {
+          display: 'block',
+          animation: 'dropHintIn 120ms ease-out',
+        },
+        '&.drop-before-row .drop-position-indicator, &.drop-confirm-before .drop-position-indicator': { top: 6 },
+        '&.drop-after-row .drop-position-indicator, &.drop-confirm-after .drop-position-indicator': { bottom: 6 },
+        '&.drop-confirm-row': {
+          borderColor: '#06b6d4',
+          bgcolor: 'rgba(6, 182, 212, 0.08)',
+          boxShadow: 'none',
+        },
+        '&.drop-confirm-row .drop-position-indicator': { bgcolor: '#06b6d4' },
       }}
     >
+      <Box data-drop-indicator className="drop-position-indicator" />
       <Stack spacing={0.7}>
         <Stack direction="row" spacing={0.65} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -306,6 +350,8 @@ function RoutingMatrix({
   selectedJobIds,
   highlightedJobIds,
   droppedJobIds,
+  onQuickMove,
+  quickMoveWorkCenters,
   lacquerColorMap,
   collapsedGroups,
   onToggleGroup,
@@ -500,8 +546,21 @@ function RoutingMatrix({
                     spacing={0.75}
                     sx={{ position: 'sticky', left: 10, width: 'fit-content', alignItems: 'center' }}
                   >
-                    <Typography component="span" aria-hidden sx={{ color: steelGroup.definition.colorAccent, fontSize: '0.82rem', fontWeight: 950 }}>
-                      {isCollapsed ? '▶' : '▼'}
+                    <Typography
+                      component="span"
+                      aria-hidden
+                      sx={{
+                        color: steelGroup.definition.colorAccent,
+                        fontSize: '0.82rem',
+                        fontWeight: 950,
+                        lineHeight: 1,
+                        transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                        transformOrigin: '50% 50%',
+                        transition: 'transform 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+                        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+                      }}
+                    >
+                      ▶
                     </Typography>
                     <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: steelGroup.definition.colorAccent }} />
                     <Typography variant="caption" sx={{ color: steelGroup.definition.colorAccent, fontSize: '0.88rem', fontWeight: 950 }}>
@@ -521,7 +580,22 @@ function RoutingMatrix({
                   </Stack>
                 </Box>
 
-                {!isCollapsed && steelGroup.rows.map(({ order, jobs }, rowIndex) => {
+                <Collapse
+                  in={!isCollapsed}
+                  timeout={320}
+                  easing={{
+                    enter: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                    exit: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
+                  unmountOnExit
+                  sx={{
+                    '@media (prefers-reduced-motion: reduce)': {
+                      transitionDuration: '0ms !important',
+                      '& .MuiCollapse-wrapperInner': { transition: 'none' },
+                    },
+                  }}
+                >
+                {steelGroup.rows.map(({ order, jobs }, rowIndex) => {
                   const firstJob = jobs[0];
                   const externalOperations = externalRoutingByOrder.get(order) ?? [];
                   const visibleExternalOperations = externalOperations.slice(0, 3);
@@ -534,7 +608,7 @@ function RoutingMatrix({
                     gridTemplateColumns: gridTemplate,
                     minHeight: 158,
                     contentVisibility: 'auto',
-                    containIntrinsicSize: '158px',
+                    containIntrinsicSize: 'auto 158px',
                     bgcolor: rowIndex % 2 === 0 ? '#ffffff' : '#fbfcfe',
                     borderBottom: '1px solid rgba(15, 23, 42, 0.06)',
                   }}
@@ -717,6 +791,7 @@ function RoutingMatrix({
                 </Box>
                   );
                 })}
+                </Collapse>
               </React.Fragment>
               );
             })}
@@ -735,6 +810,8 @@ function RoutingMatrix({
         job={selectedJob ? jobById.get(selectedJob.id) ?? selectedJob : null}
         lacquerColorMap={lacquerColorMap}
         onClose={() => setSelectedJob(null)}
+        onQuickMove={onQuickMove}
+        workCenters={quickMoveWorkCenters}
       />
     </>
   );

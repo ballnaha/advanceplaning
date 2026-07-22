@@ -18,7 +18,7 @@ import {
 import { ArrowLeft2, ArrowRight2, Calendar, Clock, TaskSquare, CloseCircle } from 'iconsax-react';
 import { addDays, parseIsoDate, startOfMondayWeek } from './date-utils';
 import PlanningActionBar from '../components/PlanningActionBar';
-import { cleanZpg2d } from '@/lib/zpg1d-helpers';
+import { cleanZpg2d, sortJobsWithZpg3dTransition } from '@/lib/zpg1d-helpers';
 import type { PlanningJob } from '@/lib/planning';
 import JobDetailDialog from '../components/JobDetailDialog';
 import NotificationSnackbar from '../components/NotificationSnackbar';
@@ -143,6 +143,37 @@ function daysBetween(startDate: string, finishDate: string) {
   const start = parseIsoDate(startDate).getTime();
   const finish = parseIsoDate(finishDate).getTime();
   return Math.max(0, Math.round((finish - start) / 86400000));
+}
+
+function resequenceOperationsWithDefaultLogic(
+  operations: TimelineOperation[],
+  workCenters: Set<string>,
+) {
+  const sortedQueuesByWorkCenter = new Map<string, TimelineOperation[]>();
+
+  for (const workCenter of workCenters) {
+    const jobs = operations
+      .filter((operation) => operation.workCenter === workCenter)
+      .map((operation) => ({
+        ...operation.rawJob,
+        arbpl: operation.workCenter,
+        stdate: operation.startDate,
+        findate: operation.finishDate,
+        seqno: operation.sequence,
+      }));
+    const operationsById = new Map(operations.map((operation) => [operation.id, operation]));
+    const queue = sortJobsWithZpg3dTransition(jobs).map((job, index) => {
+      const operation = operationsById.get(job.id)!;
+      return {
+        ...operation,
+        sequence: index + 1,
+        rawJob: { ...operation.rawJob, arbpl: job.arbpl, stdate: job.stdate, findate: job.findate, seqno: index + 1 },
+      };
+    });
+    sortedQueuesByWorkCenter.set(workCenter, queue);
+  }
+
+  return operations.map((operation) => sortedQueuesByWorkCenter.get(operation.workCenter)?.shift() ?? operation);
 }
 
 function OperationItem({
@@ -306,17 +337,20 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
   }, []);
 
   const lacquerColorMap = React.useMemo(() => {
-    const jobs = localOperations.map((op) => op.rawJob).filter(Boolean);
-    const lacquerKeys = Array.from(new Set(jobs.map(getLacquerKey))).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+    const jobs = initialOperations.map((op) => op.rawJob).filter(Boolean);
+    const group3ByLacquerKey = new Map<string, string | null>();
+    jobs.forEach((job) => {
+      const key = getLacquerKey(job);
+      if (!group3ByLacquerKey.has(key)) group3ByLacquerKey.set(key, job.zpg3d);
+    });
+    const lacquerKeys = Array.from(group3ByLacquerKey.keys()).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
 
     const map = new Map<string, LacquerColor>();
     lacquerKeys.forEach((key, index) => {
-      const matchingJob = jobs.find((job) => getLacquerKey(job) === key);
-      const group3 = matchingJob ? matchingJob.zpg3d : null;
-      map.set(key, getLacquerColorByGroup3(group3, index));
+      map.set(key, getLacquerColorByGroup3(group3ByLacquerKey.get(key) ?? null, index));
     });
     return map;
-  }, [localOperations]);
+  }, [initialOperations]);
 
   React.useEffect(() => {
     setLocalOperations(operations);
@@ -392,7 +426,10 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
       });
 
       setHasChanges(true);
-      return updatedList;
+      return resequenceOperationsWithDefaultLogic(
+        updatedList,
+        new Set([draggedOp.workCenter, targetWorkCenter]),
+      );
     });
   }, []);
 
@@ -524,7 +561,7 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
   const filteredOperations = React.useMemo(
     () => localOperations.filter((operation) => {
       const matchWindow = operation.startDate >= windowStart && operation.startDate <= windowEnd;
-      const matchStatus = selectedStatus === 'ALL' || operation.status === selectedStatus;
+      const matchStatus = operation.status !== 'DONE' && (selectedStatus === 'ALL' || operation.status === selectedStatus);
       const matchWorkCenter = selectedWorkCenter === 'ALL' || operation.workCenter === selectedWorkCenter;
       const matchOrder = !orderSearch.trim() || operation.order.toLowerCase().includes(orderSearch.trim().toLowerCase());
       return matchWindow && matchStatus && matchWorkCenter && matchOrder;
@@ -611,7 +648,7 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
             </FormControl>
             <FormControl size="small" sx={{ minWidth: 125 }}>
               <Select MenuProps={{ disableScrollLock: true }} value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)} sx={{ borderRadius: 1.5, fontSize: '0.82rem', fontWeight: 800 }}>
-                {['ALL', 'NOT START', 'START', 'WAIT', 'DONE'].map((status) => <MenuItem key={status} value={status}>{status === 'ALL' ? 'ทุก Status' : status}</MenuItem>)}
+                {['ALL', 'NOT START', 'START', 'WAIT'].map((status) => <MenuItem key={status} value={status}>{status === 'ALL' ? 'ทุก Status' : status}</MenuItem>)}
               </Select>
             </FormControl>
           </Stack>
@@ -845,6 +882,7 @@ export default function DayTimeline({ initialDate, operations, workCenters }: Pr
         job={selectedJobForModal}
         lacquerColorMap={lacquerColorMap}
         onClose={() => setSelectedJobForModal(null)}
+        onQuickMove={handleDropJob}
       />
 
       <NotificationSnackbar

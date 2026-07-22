@@ -63,3 +63,13 @@ model ProductionJob {
   @@index([arbpl, stdate])
   @@map("production_jobs")
 }
+
+model ProductionJobBackup {
+  id          Int      @id @default(autoincrement())
+  versionName String   @db.VarChar(128)
+  createdAt   DateTime @default(now())
+  jobsJson    Json
+
+  @@map("production_job_backups")
+}
+

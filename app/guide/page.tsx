@@ -11,261 +11,476 @@ import {
   Paper,
   Stack,
   Typography,
+  Grid,
 } from '@mui/material';
 import {
   Data,
   InfoCircle,
   TaskSquare,
+  CloudConnection,
+  ArchiveBook,
+  DocumentUpload,
+  Refresh,
+  Flash,
 } from 'iconsax-react';
 
 export default function GuidePage() {
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', py: 4 }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f8fafc', py: 5 }}>
       <Container maxWidth="lg">
-        <Stack spacing={3.5}>
-          {/* Section 1: วิธีการใช้งาน Dashboard */}
-          <Typography variant="h6" sx={{ fontWeight: 850, pl: 1, color: 'text.primary' }}>
-            🖥️ 1. คู่มือการใช้งานแดชบอร์ดจัดคิว
-          </Typography>
+        <Stack spacing={4}>
+          {/* Main Title Header */}
+          <Box sx={{ mb: 1, textAlign: 'center' }}>
+            <Typography variant="h3" sx={{ fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', mb: 1 }}>
+              คู่มือการใช้งานระบบจัดลำดับแผนงานผลิต
+            </Typography>
+            <Typography variant="body1" sx={{ color: '#475569', fontWeight: 600, maxW: 680, mx: 'auto' }}>
+              ศูนย์รวมคู่มือ ขั้นตอนการดำเนินงาน และเงื่อนไขตรรกะระบบอัตโนมัติของแอปพลิเคชันวางแผนจัดคิวผลิต PSC Planning
+            </Typography>
+            <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'center', mt: 2.5 }}>
+              <Chip label="อัปเดตล่าสุด: กรกฎาคม 2569" color="primary" variant="outlined" sx={{ fontWeight: 700, borderRadius: 2 }} />
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-              gap: 3,
-            }}
-          >
-            <Card sx={{ height: '100%', borderRadius: 2, border: '1px solid rgba(15, 23, 42, 0.05)', boxShadow: 'none' }}>
-              <CardContent sx={{ p: 3 }}>
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TaskSquare size="20" color="currentColor" variant="Bold" />
-                    การจัดการคิวงานผลิต (Manual Organizing)
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    คุณสามารถจัดการและเปลี่ยนตำแหน่งคิวงานผลิตของแต่ละเครื่องจักร (Work Center) ได้ตามขั้นตอนดังนี้:
-                  </Typography>
-                  <Box component="ul" sx={{ pl: 2, m: 0, '& li': { mb: 1, color: 'text.secondary', fontSize: '0.875rem' } }}>
-                    <li>
-                      <strong>การลากและวาง (Drag & Drop):</strong> กดเมาส์ค้างที่ไอคอนแฮมเบอร์เกอร์ขวาสุดของแถวงานผลิต ลากขึ้นหรือลงเพื่อแทรกตำแหน่งงานตามที่คุณต้องการ
-                    </li>
-                    <li>
-                      <strong>การย้ายข้ามประเภทเหล็ก:</strong> หากลาก Work Order ไปอีกกลุ่มประเภทเหล็ก ระบบจะบันทึกกลุ่มลำดับ (Sequence Group) ปลายทางแยกต่างหาก โดยคงข้อมูลประเภทเหล็กจริงตาม ZPG1D เดิมไว้
-                    </li>
-                    <li>
-                      <strong>การขยับทีละตำแหน่ง:</strong> กดปุ่มลูกศรขึ้นหรือลูกศรลงที่มุมขวาของแถวงาน เพื่อขยับลำดับขึ้นหรือลงทีละ 1 ลำดับได้อย่างรวดเร็ว
-                    </li>
-                    <li>
-                      <strong>การเลือกครั้งละหลายงาน (Multi-Select):</strong> ติ๊กถูกหน้าคิวงานหลายแถวเพื่อทำการลากวางจัดกลุ่ม หรือกดลูกศรขึ้น-ลงเพื่อย้ายไปพร้อมกันทั้งหมด
-                    </li>
-                    <li>
-                      <strong>ทดลองจัด Work Center อัตโนมัติ:</strong> กดปุ่ม “ทดลอง AUTO WC” เพื่อรวม Work Order แล้วกระจายไปยังเครื่อง 01, 03, 04 และ 05 โดยคำนึงถึงจำนวนการเปลี่ยน L/Q และสมดุลชั่วโมงทำงาน ระบบจะแสดงผลเปรียบเทียบก่อน-หลังและยังไม่บันทึกลงฐานข้อมูลจนกว่าจะกด SAVE
-                    </li>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
-
-            <Card sx={{ height: '100%', borderRadius: 2, border: '1px solid rgba(15, 23, 42, 0.05)', boxShadow: 'none' }}>
-              <CardContent sx={{ p: 3 }}>
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Data size="20" color="currentColor" variant="Bold" />
-                    ตัวกรองและการบันทึกข้อมูล (Sync & Filters)
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    การคัดกรองข้อมูล และระบบบันทึกคิวลงฐานข้อมูลหลักมีเงื่อนไขดังนี้:
-                  </Typography>
-                  <Box component="ul" sx={{ pl: 2, m: 0, '& li': { mb: 1, color: 'text.secondary', fontSize: '0.875rem' } }}>
-                    <li>
-                      <strong>เครื่องจักร (Machines):</strong> เลือกดูทุก Work Center หรือเลือกเฉพาะเครื่องจักรหนึ่งเครื่องจากแถบด้านบน ระบบจะจำกัด Status card และตารางแผนตามเครื่องที่เลือก
-                    </li>
-                    <li>
-                      <strong>ค้นหา Order Number:</strong> ค้นหาด้วยเลข Order แบบบางส่วนได้ โดยระบบไม่แยกตัวพิมพ์เล็กและตัวพิมพ์ใหญ่
-                    </li>
-                    <li>
-                      <strong>ปีและเดือน:</strong> กรองตามปีแผนงานและเดือนของ <strong>Start Date (stdate)</strong> หากเลือกทั้งหมด ระบบจะไม่จำกัดช่วงวันที่
-                    </li>
-                    <li>
-                      <strong>สถานะ (Status):</strong> ใช้ Checkbox เพื่อเลือกได้หลายสถานะจาก NOT START, START, WAIT และ DONE สถานะที่เลือกทำงานร่วมกันแบบ OR หรือเลือก “ทั้งหมด” เพื่อแสดงทุกสถานะ โดย Status card ยังแสดงยอดของทุกสถานะในขอบเขตเครื่องจักร ปี เดือน และ Order ที่เลือกเพื่อใช้เปรียบเทียบ
-                    </li>
-                    <li>
-                      <strong>การทำงานร่วมกันของ Filter:</strong> เครื่องจักร, Order, ปี, เดือน และ Status ใช้ร่วมกันแบบต้องตรงทุกเงื่อนไข (AND) และปุ่ม “ล้างตัวกรอง” จะคืนค่าทั้งหมดเป็นค่าเริ่มต้น
-                    </li>
-                    <li>
-                      <strong>สถานะการแก้ไข (Dirty State):</strong> เมื่อใดที่มีการลากวางปรับลำดับงานค้างอยู่ ระบบจะแสดงบอลลูนลอยตัวสีน้ำเงินที่มุมขวาล่างเพื่อแจ้งเตือนว่ามีคิวรอการบันทึก
-                    </li>
-                    <li>
-                      <strong>การตรวจสอบผลการเปลี่ยนคิว:</strong> กดไอคอนรูปเอกสารในบอลลูนเพื่อตรวจสอบว่ามีงานชิ้นใดบ้างที่มีตำแหน่งหรือกลุ่มผิดแปลกไปจากเดิม
-                    </li>
-                    <li>
-                      <strong>บันทึกลงฐานข้อมูล:</strong> กดปุ่ม <strong>SAVE</strong> หรือ <strong>SAVE CHANGES</strong> เพื่ออัปเดตข้อมูลเข้าไปยัง MySQL (ผ่าน API /api/jobs/resequence แบบเป็นกลุ่มเพื่อความรวดเร็ว)
-                    </li>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
+            </Stack>
           </Box>
 
-          {/* Section 2: เงื่อนไขการจัดคิวอัตโนมัติ */}
-          <Divider sx={{ my: 1 }} />
-
-          <Typography variant="h6" sx={{ fontWeight: 850, pl: 1, color: 'text.primary' }}>
-            ⚙️ 2. เงื่อนไขและกฎอัลกอริทึมการจัดคิวอัตโนมัติ (Auto Arrange Logic)
-          </Typography>
-
-          <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 2 }}>
-            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 4 }}>
-              ตอนโหลดหน้า ระบบจะใช้ลำดับคิวที่บันทึกไว้หากทุกงานมี Sequence ครบและไม่ซ้ำกัน หากยังไม่มีคิวที่สมบูรณ์ หรือเมื่อ Planner กด “จัดเรียงคิวอัตโนมัติ” ระบบจะสร้างคิวแยกภายในแต่ละ Work Center ตาม 8 ขั้นตอนต่อไปนี้:
+          {/* Section 1: เงื่อนไขการจัดคิวอัตโนมัติ */}
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              ⚙️ 1. เงื่อนไขและกฎอัลกอริทึมการจัดคิวอัตโนมัติ (Auto Arrange Logic)
             </Typography>
 
-            {/* Visual Flowchart */}
-            <Stack spacing={2.5}>
-              {[
-                {
-                  step: 'ขั้นตอนที่ 1',
-                  title: 'จัดกลุ่มแยกตามประเภทแผ่นเหล็ก (Material Group 1 - zpg1d)',
-                  color: '#4f46e5',
-                  desc: 'แยกประเภทการผลิตตามชนิดเหล็กหลักเพื่อไม่ให้เครื่องจักรทำงานสับสน โดยเรียงลำดับกลุ่มดังนี้: 1) เหล็กอาบปี๊บ (tinplate) ➡️ 2) เหล็กอาบ 3-Piece (three_piece) ➡️ 3) เหล็กอาบ NE (ne) ➡️ 4) เหล็กอาบ DRD (drd) ➡️ 5) เหล็กอาบ EOE (eoe)',
-                },
-                {
-                  step: 'ขั้นตอนที่ 2',
-                  title: 'จัดกลุ่มตามวันเริ่มผลิต (Start Date - stdate)',
-                  color: '#2563eb',
-                  desc: 'ภายในประเภทเหล็กเดียวกัน ระบบจะเรียงงานตามวันเริ่มผลิต (stdate) จากวันเก่าไปวันใหม่ก่อน เพื่อให้งานที่ต้องเริ่มก่อนขึ้นคิวก่อน',
-                },
-                {
-                  step: 'ขั้นตอนที่ 3',
-                  title: 'จัดกลุ่มตามขนาดของแผ่นเหล็ก (Material Group 2 - zpg2d)',
-                  color: '#0891b2',
-                  desc: 'ภายในวันเริ่มผลิตเดียวกัน ระบบจะนำขนาดมิติความยาว-กว้างของแผ่นเหล็ก (เช่น คลีนจาก 0.20x250x300 เหลือ 250x300) มาจัดกลุ่มและเรียงลำดับ เพื่อลดการสลับขนาด',
-                },
-                {
-                  step: 'ขั้นตอนที่ 4',
-                  title: 'จัดกลุ่มตามสี/กลุ่ม L/Q (Material Group 3 - zpg3d)',
-                  color: '#059669',
-                  desc: 'ระบบจะจัดงานที่มีสีหรือกลุ่ม L/Q (zpg3d) เดียวกันให้อยู่ติดกัน และพยายามต่อกลุ่มสีเดิมเพื่อลดการเปลี่ยนสีระหว่างงาน',
-                },
-                {
-                  step: 'ขั้นตอนที่ 5',
-                  title: 'จัดกลุ่มตามรหัส L/Q (L/Q Code - zlmat)',
-                  color: '#7c3aed',
-                  desc: 'ภายในกลุ่มสีเดียวกัน ระบบจะรวมงานที่ใช้รหัส L/Q (zlmat) เดียวกันให้อยู่ติดกัน หากกลุ่มสีต่อเนื่องจากกลุ่มขนาดก่อนหน้า ระบบจะพยายามต่อรหัส L/Q เดิมก่อน เพื่อลดจำนวนครั้งในการล้างและเปลี่ยนสารเคลือบ',
-                },
-                {
-                  step: 'ขั้นตอนที่ 6',
-                  title: 'จัดกลุ่มตามขั้นตอนการผลิต (OP - vornr)',
-                  color: '#d97706',
-                  desc: 'ภายในรหัส L/Q เดียวกัน ระบบจะจัดกลุ่มและเรียงหมายเลขขั้นตอนการผลิต (OP หรือ vornr) จากน้อยไปมาก โดยเปรียบเทียบตัวเลขตามค่าจริง',
-                },
-                {
-                  step: 'ขั้นตอนที่ 7',
-                  title: 'เรียงวันกำหนดส่งและลำดับเดิม (Due Date, Sequence & Source Row)',
-                  color: '#475569',
-                  desc: 'ภายในกลุ่มย่อยเดียวกัน ระบบจะเรียงวันกำหนดส่งผลิต (Findate) จากเก่าไปใหม่ก่อน หากไม่มี Findate จะใช้ Start Date แทน จากนั้นใช้ Sequence ที่บันทึกไว้ และ Source Row จากไฟล์ Excel เป็นตัวตัดสินลำดับสุดท้าย',
-                },
-                {
-                  step: 'ขั้นตอนที่ 8',
-                  title: 'รักษาลำดับ OP และความต่อเนื่องของ Work Order',
-                  color: '#334155',
-                  desc: 'หลังได้คิวพื้นฐาน ระบบจะตรวจให้ OP ของ Work Order เดียวกันเรียงจากน้อยไปมากเสมอ และพยายามย้ายงานของ Order เดียวกันให้อยู่ติดกันเฉพาะกรณีที่ไม่ทำให้จำนวนการเปลี่ยนรหัส L/Q เพิ่มขึ้น',
-                },
-              ].map((item, idx) => (
-                <Box key={idx} sx={{ display: 'flex', gap: 2.5, position: 'relative' }}>
-                  {/* Step line connector */}
-                  {idx < 7 && (
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        left: 20,
-                        top: 40,
-                        bottom: -30,
-                        width: 2,
-                        bgcolor: 'rgba(15, 23, 42, 0.08)',
-                        zIndex: 1,
-                      }}
-                    />
-                  )}
+            <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.05)' }}>
+              <Typography variant="body2" sx={{ color: '#475569', fontWeight: 650, mb: 4, lineHeight: 1.6 }}>
+                เมื่อกดปุ่ม **"DEFAULT SETTING" (หรือจัดเรียงคิวอัตโนมัติ)** ระบบจะทำการดึงประมวลผลงานในฐานข้อมูลของเครื่องจักรเครื่องนั้น ๆ มาทำการคำนวณและจัดคิวเข้าแผนให้เรียงกันอย่างมีประสิทธิภาพผ่าน 8 กฎเกณฑ์ลำดับดังต่อไปนี้:
+              </Typography>
 
-                  {/* Step Number Circle */}
-                  <Box
-                    sx={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: '50%',
-                      bgcolor: item.color,
-                      color: '#ffffff',
-                      display: 'grid',
-                      placeItems: 'center',
-                      fontWeight: 850,
-                      fontSize: '0.9rem',
-                      zIndex: 2,
-                      boxShadow: `0 4px 12px ${item.color}33`,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {idx + 1}
-                  </Box>
-
-                  <Box sx={{ flex: 1, pb: idx < 7 ? 3 : 0 }}>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, mb: 0.75 }}>
-                      <Chip
-                        size="small"
-                        label={item.step}
+              {/* Visual Flowchart */}
+              <Stack spacing={2.5}>
+                {[
+                  {
+                    step: 'ขั้นตอนที่ 1',
+                    title: 'จัดกลุ่มแยกตามประเภทแผ่นเหล็ก (Material Group 1 - zpg1d)',
+                    color: '#4f46e5',
+                    desc: 'แยกประเภทการผลิตตามชนิดเหล็กหลักเพื่อไม่ให้เครื่องจักรทำงานสับสน โดยเรียงลำดับกลุ่มดังนี้: 1) เหล็กอาบปี๊บ (tinplate) ➡️ 2) เหล็กอาบ 3-Piece (three_piece) ➡️ 3) เหล็กอาบ NE (ne) ➡️ 4) เหล็กอาบ DRD (drd) ➡️ 5) เหล็กอาบ EOE (eoe)',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 2',
+                    title: 'จัดกลุ่มตามวันเริ่มผลิต (Start Date - stdate)',
+                    color: '#2563eb',
+                    desc: 'ภายในประเภทเหล็กเดียวกัน ระบบจะเรียงงานตามวันเริ่มผลิต (stdate) จากวันเก่าไปวันใหม่ก่อน เพื่อให้งานที่ต้องเริ่มก่อนขึ้นคิวก่อน',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 3',
+                    title: 'จัดกลุ่มตามขนาดของแผ่นเหล็ก (Material Group 2 - zpg2d)',
+                    color: '#0891b2',
+                    desc: 'ภายในวันเริ่มผลิตเดียวกัน ระบบจะนำขนาดมิติความยาว-กว้างของแผ่นเหล็ก (เช่น คลีนจาก 0.20x250x300 เหลือ 250x300) มาจัดกลุ่มและเรียงลำดับ เพื่อลดการสลับขนาด',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 4',
+                    title: 'จัดกลุ่มตามสี/กลุ่ม L/Q (Material Group 3 - zpg3d)',
+                    color: '#059669',
+                    desc: 'ระบบจะจัดงานที่มีสีหรือกลุ่ม L/Q (zpg3d) เดียวกันให้อยู่ติดกัน และพยายามต่อกลุ่มสีเดิมเพื่อลดการเปลี่ยนสีระหว่างงาน',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 5',
+                    title: 'จัดกลุ่มตามรหัส L/Q (L/Q Code - zlmat)',
+                    color: '#7c3aed',
+                    desc: 'ภายในกลุ่มสีเดียวกัน ระบบจะรวมงานที่ใช้รหัส L/Q (zlmat) เดียวกันให้อยู่ติดกัน หากกลุ่มสีต่อเนื่องจากกลุ่มขนาดก่อนหน้า ระบบจะพยายามต่อรหัส L/Q เดิมก่อน เพื่อลดจำนวนครั้งในการล้างและเปลี่ยนสารเคลือบ',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 6',
+                    title: 'จัดกลุ่มตามขั้นตอนการผลิต (OP - vornr)',
+                    color: '#d97706',
+                    desc: 'ภายในรหัส L/Q เดียวกัน ระบบจะจัดกลุ่มและเรียงหมายเลขขั้นตอนการผลิต (OP หรือ vornr) จากน้อยไปมาก โดยเปรียบเทียบตัวเลขตามค่าจริง',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 7',
+                    title: 'เรียงวันกำหนดส่งและลำดับเดิม (finish date, Sequence & Source Row)',
+                    color: '#475569',
+                    desc: 'ภายในกลุ่มย่อยเดียวกัน ระบบจะเรียงวันกำหนดส่งผลิต (Findate) จากเก่าไปใหม่ก่อน หากไม่มี Findate จะใช้ Start Date แทน จากนั้นใช้ Sequence ที่บันทึกไว้ และ Source Row จากไฟล์ Excel เป็นตัวตัดสินลำดับสุดท้าย',
+                  },
+                  {
+                    step: 'ขั้นตอนที่ 8',
+                    title: 'รักษาลำดับ OP และความต่อเนื่องของ Work Order',
+                    color: '#334155',
+                    desc: 'หลังได้คิวพื้นฐาน ระบบจะตรวจให้ OP ของ Work Order เดียวกันเรียงจากน้อยไปมากเสมอ และพยายามย้ายงานของ Order เดียวกันให้อยู่ติดกันเฉพาะกรณีที่ไม่ทำให้จำนวนการเปลี่ยนรหัส L/Q เพิ่มขึ้น',
+                  },
+                ].map((item, idx) => (
+                  <Box key={idx} sx={{ display: 'flex', gap: 2.5, position: 'relative' }}>
+                    {/* Step line connector */}
+                    {idx < 7 && (
+                      <Box
                         sx={{
-                          bgcolor: `${item.color}15`,
-                          color: item.color,
-                          fontWeight: 800,
-                          height: 20,
-                          fontSize: '0.68rem',
-                          border: `1px solid ${item.color}35`,
+                          position: 'absolute',
+                          left: 20,
+                          top: 40,
+                          bottom: -30,
+                          width: 2,
+                          bgcolor: 'rgba(15, 23, 42, 0.08)',
+                          zIndex: 1,
                         }}
                       />
-                      <Typography variant="body1" sx={{ fontWeight: 800, color: 'text.primary' }}>
-                        {item.title}
+                    )}
+
+                    {/* Step Number Circle */}
+                    <Box
+                      sx={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: '50%',
+                        bgcolor: item.color,
+                        color: '#ffffff',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontWeight: 850,
+                        fontSize: '0.9rem',
+                        zIndex: 2,
+                        boxShadow: `0 4px 12px ${item.color}33`,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {idx + 1}
+                    </Box>
+
+                    <Box sx={{ flex: 1, pb: idx < 7 ? 3 : 0 }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, mb: 0.75 }}>
+                        <Chip
+                          size="small"
+                          label={item.step}
+                          sx={{
+                            bgcolor: `${item.color}15`,
+                            color: item.color,
+                            fontWeight: 800,
+                            height: 20,
+                            fontSize: '0.68rem',
+                            border: `1px solid ${item.color}35`,
+                          }}
+                        />
+                        <Typography variant="body1" sx={{ fontWeight: 850, color: '#0f172a' }}>
+                          {item.title}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.6, maxWidth: 840, fontWeight: 550 }}>
+                        {item.desc}
                       </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Stack>
+            </Paper>
+          </Box>
+
+          {/* Section 3: การซิงค์และอัปโหลดแผนงาน */}
+          <Divider sx={{ my: 1, borderColor: 'rgba(15, 23, 42, 0.06)' }} />
+
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              📂 2. การนำเข้าข้อมูลแผนงานและระบบซิงค์อัตโนมัติ (Import & Shared Drive Sync)
+            </Typography>
+
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.06)', boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.02)' }}>
+                  <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                    <Stack spacing={2.5}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 850, color: '#0891b2', display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                        <CloudConnection size="24" color="currentColor" variant="Bulk" />
+                        ระบบซิงค์อัตโนมัติ (Shared Drive Sync)
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#475569', fontWeight: 600, lineHeight: 1.6 }}>
+                        นักวางแผนสามารถดึงไฟล์นำเข้าแผนผลิตจากเซิร์ฟเวอร์ส่วนกลางได้โดยตรงด้วยขั้นตอนอัตโนมัติ:
+                      </Typography>
+                      <Box component="ul" sx={{ pl: 2.5, m: 0, '& li': { mb: 1.5, color: '#475569', fontSize: '0.875rem', lineHeight: 1.6, fontWeight: 550 } }}>
+                        <li>
+                          <strong>ที่อยู่ไฟล์แชร์กลาง:</strong> ดึงไฟล์ส่งออกล่าสุดจากระบบของบริษัทที่เน็ตเวิร์กพาร์ท: `\\192.168.17.2\D$\SAP_XLSX\ZPP001\ZPP001.XLSX` (หรือเครื่อง `pscprdk2web`)
+                        </li>
+                        <li>
+                          <strong>คลิกเดียวเพื่อซิงค์:</strong> กดปุ่ม **"เริ่มซิงค์จาก Shared Drive"** ระบบจะสแกนโฟลเดอร์ ค้นหาไฟล์อัปเดตล่าสุด และนำเข้าลงฐานข้อมูลในระบบทันที
+                        </li>
+                        <li>
+                          <strong>รักษาลำดับคิวที่จัดไว้:</strong> ระบบจับคู่รายการเดิมด้วย Order และ OP เพื่อคง Seq/กลุ่มคิวเดิมไว้ และจะใช้ Default Logic จัดเฉพาะรายการใหม่หรือรายการที่เปลี่ยน Work Center
+                        </li>
+                        <li>
+                          <strong>การสำรองข้อมูลท้องถิ่น:</strong> ทุกครั้งที่ซิงค์สำเร็จ ระบบจะทำสำเนาไฟล์ต้นฉบับเก็บสำรองไว้ที่โฟลเดอร์ของโปรเจกต์อัตโนมัติ เพื่อป้องกันการอัปโหลดไฟล์ใหม่แล้วข้อมูลเดิมสูญหาย
+                        </li>
+                        <li>
+                          <strong>ปุ่มดาวน์โหลดไฟล์เดิม:</strong> บนหน้าซิงค์จะมีปุ่มเขียวแสดงขึ้นมาเพื่อระบุข้อมูลประวัติ และสามารถคลิกดาวน์โหลดไฟล์ Excel ต้นฉบับมาตรวจสอบย้อนหลังได้ตลอดเวลา
+                        </li>
+                        <li>
+                          <strong>การทำตั้งเวลาอัตโนมัติ (Windows Task Scheduler):</strong> สามารถตั้งรันอัปเดตอัตโนมัติผ่าน Windows Task Scheduler หรือเครื่องมือตั้งเวลาอื่น ๆ ได้โดยการยิงขอเรียกแบบ GET ไปที่:
+                          <Box sx={{ p: 1, mt: 1, bgcolor: '#f1f5f9', borderRadius: 1.5, fontFamily: 'monospace', fontSize: '0.78rem', wordBreak: 'break-all', border: '1px solid rgba(15,23,42,0.06)' }}>
+                            GET /api/import-jobs/sync-shared-drive?trigger=true&key=psc_sync_secret
+                          </Box>
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748b', fontWeight: 600 }}>
+                            * หมายเหตุ: คุณสามารถเปลี่ยนรหัสผ่านคีย์นี้ได้โดยระบุฟิลด์ `SYNC_CRON_KEY` ในไฟล์ `.env`
+                          </Typography>
+                        </li>
+                      </Box>
                     </Stack>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6, maxWidth: 840 }}>
-                      {item.desc}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Card sx={{ height: '100%', borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.06)', boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.02)' }}>
+                  <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+                    <Stack spacing={2.5}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 850, color: '#64748b', display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                        <DocumentUpload size="24" color="currentColor" variant="Bulk" />
+                        การอัปโหลดแมนนวล (Manual File Upload)
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#475569', fontWeight: 600, lineHeight: 1.6 }}>
+                        กรณีต้องการนำเข้าแผนงานเฉพาะกิจผ่านไฟล์ในคอมพิวเตอร์ของคุณ สามารถทำได้ผ่านกล่องอัปโหลดในหน้าจัดเก็บ:
+                      </Typography>
+                      <Box component="ul" sx={{ pl: 2.5, m: 0, '& li': { mb: 1.5, color: '#475569', fontSize: '0.875rem', lineHeight: 1.6, fontWeight: 550 } }}>
+                        <li>
+                          <strong>ขอบเขตสกุลไฟล์:</strong> รองรับเฉพาะไฟล์ตาราง Excel นามสกุล `.xlsx` หรือ `.xls` เท่านั้น
+                        </li>
+                        <li>
+                          <strong>ระบบลากและวาง (Drag & Drop Zone):</strong> สามารถเลือกคลิกที่กล่องเพื่อหาไฟล์ หรือใช้เมาส์ลากไฟล์จากเครื่องคอมพิวเตอร์มาวางในกล่องขอบปะสีดำเพื่ออัปโหลดทันที
+                        </li>
+                        <li>
+                          <strong>การตรวจสอบหัวตาราง:</strong> ระบบจะทำการตรวจสอบหัวตาราง หากหัวตารางไม่ครบถ้วนตามแบบแผนมาตรฐานระบบจะแจ้งเตือนพร้อมระบุชื่อคอลัมน์ที่ขาดไปทันทีเพื่อความปลอดภัยของข้อมูล
+                        </li>
+                        <li>
+                          <strong>รักษาลำดับเดิมระหว่างนำเข้า:</strong> เมื่อพบ Order + OP เดิม ระบบจะอัปเดตข้อมูลจาก Excel โดยคงตำแหน่ง Seq เดิมไว้ ส่วน Order ใหม่จะถูกแทรกตาม Default Logic อัตโนมัติ
+                        </li>
+                      </Box>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Section 4: ระบบสำรองและกู้คืนเวอร์ชัน */}
+          <Divider sx={{ my: 1, borderColor: 'rgba(15, 23, 42, 0.06)' }} />
+
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              🔄 3. ระบบกู้คืนแผนงานประวัติการจัดคิว (Queue Backup & Rollbacks)
+            </Typography>
+
+            <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.05)' }}>
+              <Grid container spacing={4} sx={{ alignItems: 'center' }}>
+                <Grid size={{ xs: 12, md: 7 }}>
+                  <Stack spacing={2.5}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 850, color: '#d97706', display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                      <ArchiveBook size="24" color="currentColor" variant="Bulk" />
+                      การสำรองข้อมูลคิวอัตโนมัติสูงสุด 3 เวอร์ชัน
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#475569', fontWeight: 600, lineHeight: 1.6 }}>
+                      เพื่อป้องกันอันตรายจากการอัปโหลดไฟล์ Excel ใหม่ทับแผนจัดคิวเดิมที่นักวางแผนจัดระเบียบไว้อย่างประณีต ระบบจึงมีระบบสำรองข้อมูลอัตโนมัติ:
+                    </Typography>
+                    <Box component="ul" sx={{ pl: 2.5, m: 0, '& li': { mb: 1.5, color: '#475569', fontSize: '0.875rem', lineHeight: 1.6, fontWeight: 550 } }}>
+                      <li>
+                        <strong>สร้างจุดกู้คืนอัตโนมัติ:</strong> ทุกครั้งก่อนที่จะเริ่มการกดบันทึกข้อมูลนำเข้าจาก Excel ใหม่ (ทั้งแบบดึง Shared Drive และแบบแมนนวล) ระบบจะทำการสำรองโครงสร้างแผน ณ เสี้ยววินาทีนั้นบันทึกเก็บไว้เป็นประวัติย้อนหลังอัตโนมัติ
+                      </li>
+                      <li>
+                        <strong>จำกัดประวัติย้อนหลัง:</strong> ระบบจะจัดเก็บและวนลูปประวัติกู้คืนแผนไว้สูงสุด 3 เวอร์ชันล่าสุด (Version 1 - 3) เพื่อประหยัดพื้นที่ฐานข้อมูล
+                      </li>
+                      <li>
+                        <strong>วิธีการกู้คืนแผนเดิม (Rollback):</strong> ในแถบด้านขวาของหน้าจออัปโหลด จะแสดงไทม์ไลน์จุดย้อนกลับ Planner สามารถตรวจดู วัน เวลา ที่สร้าง และคลิกปุ่ม **"กู้คืนแผนนี้ (Rollback)"** โดยระบบจะแสดงบ็อกซ์ยืนยันและนำแผนเก่าทั้งหมดมาเขียนทับกลับคืนสู่ฐานข้อมูลทันทีในเวลาไม่เกิน 2 วินาที
+                      </li>
+                    </Box>
+                  </Stack>
+                </Grid>
+                <Grid size={{ xs: 12, md: 5 }}>
+                  <Box
+                    sx={{
+                      p: 3,
+                      borderRadius: 3.5,
+                      bgcolor: '#fafafa',
+                      border: '1.5px dashed rgba(217, 119, 6, 0.2)',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 850, color: '#b45309', mb: 1.5 }}>
+                      ⚠️ ข้อควรระวังระหว่างการกู้คืนคิว (Rollbacks)
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', color: '#64748b', fontWeight: 600, textAlign: 'left', lineHeight: 1.65 }}>
+                      การกด Rollback จะทำการเขียนทับข้อมูลแผนการผลิตทั้งหมดในฐานข้อมูลปัจจุบัน ดังนั้นหลังจากสั่งย้อนกลับแล้ว แผนการจัดเรียงบนแดชบอร์ดหลักจะเปลี่ยนเป็นของเวอร์ชันอดีตนั้นทันทีเพื่อให้นักวางแผนตรวจสอบงาน
                     </Typography>
                   </Box>
+                </Grid>
+              </Grid>
+            </Paper>
+          </Box>
+
+          {/* Section 5: การส่งออกรายงานแผนผลิต */}
+          <Divider sx={{ my: 1, borderColor: 'rgba(15, 23, 42, 0.06)' }} />
+
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              📊 4. ระบบส่งออกตารางแผนผลิตระดับมืออาชีพ (Filtered Multi-Sheet Excel Export)
+            </Typography>
+
+            <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.05)' }}>
+              <Stack spacing={2.5}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 850, color: '#059669', display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                  <Refresh size="24" color="currentColor" variant="Bulk" />
+                  การดาวน์โหลดไฟล์จัดโครงสร้างรายงานสำหรับหน้าเครื่อง
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#475569', fontWeight: 600, lineHeight: 1.6 }}>
+                  เพื่อความรวดเร็วในการประสานงานและแจกจ่ายงานสู่ Operator หน้าเครื่องจักร ระบบจึงมีฟังก์ชันส่งออก Excel ระดับสูง:
+                </Typography>
+                <Box component="ul" sx={{ pl: 2.5, m: 0, '& li': { mb: 1.5, color: '#475569', fontSize: '0.875rem', lineHeight: 1.6, fontWeight: 550 } }}>
+                  <li>
+                    <strong>ส่งออกตามตัวกรองปัจจุบัน (Real-time Filtered Export):</strong> หากนักวางแผนกดกรองหน้าจอแดชบอร์ด เช่น คัดกรองเฉพาะสถานะ WIP, เจาะจงเฉพาะปีหรือเดือนผลิต หรือค้นหารหัสใบสั่งงานแบบเฉพาะเจาะจง เมื่อกดปุ่ม **"EXPORT EXCEL"** ข้อมูลคิวที่ถูกดาวน์โหลดออกมาจะตรงกับข้อมูลคัดกรองที่แสดงอยู่หน้าบอร์ดจัดคิวนั้น ๆ ทันที
+                  </li>
+                  <li>
+                    <strong>โครงสร้างแยกรายเครื่องจักร (Multi-Sheet Tabs):</strong> ภายในไฟล์ Excel ที่ดาวน์โหลดออกมา จะถูกจัดสรรแบ่งหน้าเป็นชีตย่อยด้านล่างอย่างชาญฉลาด:
+                    <br />
+                    &nbsp;&nbsp;&nbsp;&nbsp;• <strong>ชีต "ภาพรวมแผนผลิต" (Dashboard):</strong> แสดงตารางสรุปกำลังผลิตรวม และตารางแสดงสถิติกำลังโหลดงานรวมของแต่ละเครื่องจักรให้วิเคราะห์ง่าย
+                    <br />
+                    &nbsp;&nbsp;&nbsp;&nbsp;• <strong>ชีต "แผนหลักเรียงลำดับคิว" (Master):</strong> รวบรวมข้อมูลรายการงานผลิตทั้งหมดที่กรอง
+                    <br />
+                    &nbsp;&nbsp;&nbsp;&nbsp;• <strong>ชีตรายเครื่องจักร "เครื่อง [รหัส]" (Per WC Tabs):</strong> จะทำการตัดแบ่งเฉพาะคิวงานที่ต้องรันของเครื่องจักรเครื่องนั้น ๆ ออกมาเปรียบเสมือนใบส่งงานประจำเครื่อง ทำให้สามารถพิมพ์หรือส่งงานเฉพาะเครื่องจักรได้ง่าย
+                  </li>
+                  <li>
+                    <strong>ระบบปรับความกว้างช่องและจัดวันที่อัตโนมัติ:</strong> คอลัมน์วันที่จะถูกแปลงเป็นรูปแบบอ่านสะดวก และขนาดช่องตารางของทุกชีตจะทำการยืดขยายตามค่าความยาวจริงในคอลัมน์อัตโนมัติ เพื่อหมดกังวลเรื่องการแสดงผลบีบอัดจนอ่านไม่เข้าใจ
+                  </li>
                 </Box>
-              ))}
-            </Stack>
+              </Stack>
+            </Paper>
+          </Box>
 
-            <Divider sx={{ my: 4 }} />
+          {/* Section 6: ย้ายแผนการผลิตด่วน (Quick Reschedule) */}
+          <Divider sx={{ my: 1, borderColor: 'rgba(15, 23, 42, 0.06)' }} />
 
-            <Stack direction="row" spacing={1.5} sx={{ bgcolor: 'rgba(79, 70, 229, 0.035)', p: 2.5, borderRadius: 2, border: '1px solid rgba(79, 70, 229, 0.1)' }}>
-              <Box sx={{ color: 'primary.main', mt: 0.25 }}>
-                <InfoCircle size="20" variant="Bold" color="currentColor" />
-              </Box>
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 850, color: 'primary.main', mb: 1 }}>
-                  คำแนะนำสำหรับนักวางแผนลำดับงาน (Tips for Planners):
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.6, fontSize: '0.875rem', mb: 2 }}>
-                  ระบบใช้คิวที่ SAVE ไว้เป็นหลัก และจะสร้างคิวพื้นฐานอัตโนมัติเมื่อยังไม่มี Sequence ที่สมบูรณ์หรือเมื่อกด “จัดเรียงคิวอัตโนมัติ” โดยให้ Start Date เป็นเงื่อนไขสำคัญภายในกลุ่มประเภทเหล็ก Planner สามารถทำ Fine-tuning ด้วยการลากจัดลำดับตามสถานการณ์หน้างาน แล้วตรวจสอบรายการเปลี่ยนแปลงก่อนกด SAVE
-                </Typography>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              ⚡ 5. ระบบย้ายแผนการผลิตด่วน (Quick Reschedule)
+            </Typography>
 
-                <Typography variant="subtitle1" sx={{ fontWeight: 850, color: 'primary.main', mb: 1.5 }}>
-                  💡 ขอบเขตของ Filter และการแก้ไขคิว:
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.65, fontSize: '0.875rem', mb: 2 }}>
-                  • <strong>Filter มีผลต่อรายการที่มองเห็น:</strong>
-                  <br />
-                  &nbsp;&nbsp;&nbsp;&nbsp;ระบบกรองตามเครื่องจักร, เลข Order, ปีและเดือนของ Start Date และ Status โดยต้องตรงทุกเงื่อนไขที่เลือก งานนอก Filter จะไม่แสดงในตาราง แต่ยังคงอยู่ในแผนและฐานข้อมูล
-                  <br /><br />
-                  • <strong>Filter ไม่ได้จัดลำดับคิวใหม่อัตโนมัติ:</strong>
-                  <br />
-                  &nbsp;&nbsp;&nbsp;&nbsp;การเปลี่ยนลำดับเกิดจากการลากวาง ขยับขึ้น-ลง ย้าย Work Center หรือกด “จัดเรียงคิวอัตโนมัติ” การเปลี่ยนแปลงยังไม่ลงฐานข้อมูลจนกว่าจะกด SAVE
+            <Paper sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, border: '1px solid rgba(15, 23, 42, 0.05)' }}>
+              <Stack spacing={3}>
+                <Typography variant="body2" sx={{ color: '#475569', fontWeight: 650, lineHeight: 1.6 }}>
+                  เมื่อเกิดเหตุฉุกเฉินที่ต้องย้ายงานผลิตไปเครื่องจักรอื่นหรือเปลี่ยนวันเริ่มต้นผลิตใหม่ทันที นักวางแผนสามารถใช้ฟังก์ชัน **"ย้ายแผนการผลิตด่วน (Quick Reschedule)"** ในหน้ารายละเอียดใบสั่งงาน (Order Detail Modal) ได้โดยไม่ต้องลากย้ายบนบอร์ดเอง
                 </Typography>
 
-                <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 800, display: 'block', fontSize: '0.875rem', lineHeight: 1.5 }}>
-                  ** ไฟล์ excel ถูกเก็บไว้ที่ pscprdk2web\D:\SAP_XLSX\ZPP001
-                </Typography>
-              </Box>
-            </Stack>
-          </Paper>
+                {/* Steps */}
+                <Stack spacing={2.5}>
+                  {[
+                    {
+                      step: 'ขั้นตอนที่ 1',
+                      title: 'เปิดรายละเอียดใบสั่งงาน (Order Detail Modal)',
+                      color: '#4f46e5',
+                      desc: 'คลิกที่การ์ดของงานที่ต้องการย้ายบนหน้าแดชบอร์ดจัดคิว ระบบจะแสดง Modal ข้อมูลรายละเอียดงานผลิตขึ้นมา ภายในจะแสดงข้อมูลครบถ้วน เช่น Order Number, เครื่องจักรปัจจุบัน, วันเริ่ม-สิ้นสุด, จำนวนผลิต และรายละเอียดอื่น ๆ',
+                    },
+                    {
+                      step: 'ขั้นตอนที่ 2',
+                      title: 'กดปุ่ม "⚡ ย้ายแผนการผลิตด่วน (Quick Reschedule)"',
+                      color: '#2563eb',
+                      desc: 'ที่ด้านขวาของ Modal จะมีปุ่มสีม่วง "⚡ ย้ายแผนการผลิตด่วน (Quick Reschedule)" กดเพื่อเปิดแผงเครื่องมือย้ายงานทางลัดขึ้นมา หากต้องการปิดแผงนี้สามารถกดปุ่มเดิมอีกครั้ง (ข้อความจะเปลี่ยนเป็น "❌ ปิดเครื่องมือย้ายงาน")',
+                    },
+                    {
+                      step: 'ขั้นตอนที่ 3',
+                      title: 'เลือกเครื่องจักรปลายทาง (Work Center)',
+                      color: '#0891b2',
+                      desc: 'ในแผง Quick Reschedule จะมีช่อง Dropdown ให้เลือกเครื่องจักรปลายทาง (Work Center) ที่ต้องการย้ายงานไป ระบบจะแสดงรายการเครื่องจักรทั้งหมดที่มีในระบบให้เลือก โดยค่าเริ่มต้นจะเป็นเครื่องจักรปัจจุบันของงาน',
+                    },
+                    {
+                      step: 'ขั้นตอนที่ 4',
+                      title: 'กำหนดวันที่เริ่มต้นแผนใหม่ (Start Date)',
+                      color: '#059669',
+                      desc: 'เลือกวันที่เริ่มต้นผลิตใหม่ผ่าน Date Picker โดยหน้า Timeline จะเลื่อน Finish Date ตามจำนวนวันที่ย้ายและรักษาระยะเวลาระหว่าง Start Date กับ Finish Date เดิมไว้ ส่วนวันผลิตเสร็จบนกราฟคำนวณจาก Start Date + PRD.(Days) และระบบจะแสดงสถานะ LATE หากวันผลิตเสร็จเกิน Finish Date ใหม่',
+                    },
+                    {
+                      step: 'ขั้นตอนที่ 5',
+                      title: 'กดปุ่ม "ย้ายและจัดลำดับคิว" เพื่อบันทึก',
+                      color: '#7c3aed',
+                      desc: 'เมื่อเลือกเครื่องจักรและวันที่เรียบร้อยแล้ว กดปุ่มสีม่วง "ย้ายและจัดลำดับคิว" ระบบจะย้ายงานและคำนวณ Seq ใหม่ด้วยตรรกะ Default Setting ในหน้าจอก่อน จากนั้นจะแจ้ง Seq ใหม่และรอให้ผู้ใช้กดปุ่มบันทึกแผนเพื่อส่งการเปลี่ยนแปลงลงฐานข้อมูล',
+                    },
+                  ].map((item, idx) => (
+                    <Box key={idx} sx={{ display: 'flex', gap: 2.5, position: 'relative' }}>
+                      {idx < 4 && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            left: 20,
+                            top: 40,
+                            bottom: -30,
+                            width: 2,
+                            bgcolor: 'rgba(15, 23, 42, 0.08)',
+                            zIndex: 1,
+                          }}
+                        />
+                      )}
+                      <Box
+                        sx={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: '50%',
+                          bgcolor: item.color,
+                          color: '#ffffff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 850,
+                          fontSize: '0.9rem',
+                          zIndex: 2,
+                          boxShadow: `0 4px 12px ${item.color}33`,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {idx + 1}
+                      </Box>
+                      <Box sx={{ flex: 1, pb: idx < 4 ? 3 : 0 }}>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, mb: 0.75 }}>
+                          <Chip
+                            size="small"
+                            label={item.step}
+                            sx={{
+                              bgcolor: `${item.color}15`,
+                              color: item.color,
+                              fontWeight: 800,
+                              height: 20,
+                              fontSize: '0.68rem',
+                              border: `1px solid ${item.color}35`,
+                            }}
+                          />
+                          <Typography variant="body1" sx={{ fontWeight: 850, color: '#0f172a' }}>
+                            {item.title}
+                          </Typography>
+                        </Stack>
+                        <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.6, maxWidth: 840, fontWeight: 550 }}>
+                          {item.desc}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                </Stack>
+
+                <Divider sx={{ borderColor: 'rgba(15, 23, 42, 0.06)' }} />
+
+                <Stack direction="row" spacing={1.5} sx={{ bgcolor: 'rgba(245, 158, 11, 0.04)', p: 3, borderRadius: 2.5, border: '1px solid rgba(245, 158, 11, 0.15)' }}>
+                  <Box sx={{ color: '#d97706', mt: 0.25 }}>
+                    <InfoCircle size="20" variant="Bold" color="currentColor" />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ color: '#92400e', fontWeight: 850, mb: 1, fontSize: '0.86rem' }}>
+                      💡 ตรรกะการจัดลำดับคิวเมื่อย้ายงาน (Queue Re-sequencing Logic):
+                    </Typography>
+                    <Box component="ul" sx={{ pl: 2, m: 0, '& li': { mb: 1, color: '#92400e', fontSize: '0.82rem', lineHeight: 1.6, fontWeight: 600 } }}>
+                      <li>
+                        <strong>ใช้ Default Setting Logic เดียวกัน:</strong> หลังย้ายงาน ระบบจะจัดคิวใหม่ทั้ง Work Center ต้นทางและปลายทางด้วยกฎเดียวกับปุ่ม DEFAULT SETTING ไม่ใช่เพียงเพิ่ม Seq ต่อท้าย
+                      </li>
+                      <li>
+                        <strong>เกณฑ์การเรียงคิว:</strong> ระบบเรียงตามประเภทเหล็ก (zpg1d), Start Date, ขนาด (zpg2d), สี/กลุ่ม L/Q (zpg3d), รหัส L/Q, OP, finish date และลำดับจากข้อมูลต้นฉบับ พร้อมรักษาลำดับ OP และความต่อเนื่องของ Work Order
+                      </li>
+                      <li>
+                        <strong>ผลลัพธ์หลังย้าย:</strong> ระบบกำหนด Seq ใหม่เป็น 1, 2, 3… ให้ทุกงานในคิวที่ได้รับผลกระทบ ดังนั้นงานที่ย้ายไปวันใหม่จะอยู่ในตำแหน่งที่ตรรกะ Default Setting คำนวณ ไม่จำเป็นต้องอยู่ท้ายคิวเสมอ
+                      </li>
+                      <li>
+                        <strong>บันทึกด้วยผู้ใช้ทุกหน้า:</strong> การย้ายจาก Quick Reschedule ในหน้า Planning Dashboard, Gantt Timeline และ Day Timeline ใช้ตรรกะเดียวกัน แต่ยังไม่บันทึกฐานข้อมูลทันที ต้องกดปุ่มบันทึกแผนของหน้านั้นเพื่อยืนยันการเปลี่ยนแปลง
+                      </li>
+                    </Box>
+                  </Box>
+                </Stack>
+              </Stack>
+            </Paper>
+          </Box>
+
         </Stack>
       </Container>
     </Box>
