@@ -45,6 +45,22 @@ type ConfirmDialogState = {
   onConfirm: () => void;
 };
 
+type SyncStreamEvent = {
+  type: 'progress' | 'complete' | 'error';
+  progress?: number;
+  message: string;
+  importedRows?: number;
+  totalRows?: number;
+  log?: {
+    filename: string;
+    localBackupFilename?: string;
+    fileSize: number;
+    mtime: string;
+    syncedAt: string;
+    rowCount: number;
+  };
+};
+
 const initialState: ImportState = {
   status: 'idle',
   message: 'เลือกไฟล์ Excel หรือกดซิงค์จาก Shared Drive เพื่อเริ่มต้น',
@@ -77,6 +93,7 @@ export default function UploadExcelClient() {
   const [clearingDatabase, setClearingDatabase] = React.useState(false);
   const [syncLog, setSyncLog] = React.useState<{ filename: string; localBackupFilename?: string; fileSize: number; mtime: string; syncedAt: string; rowCount: number } | null>(null);
   const [syncing, setSyncing] = React.useState(false);
+  const [syncProgress, setSyncProgress] = React.useState(0);
 
   const [confirmDialog, setConfirmDialog] = React.useState<ConfirmDialogState>({
     open: false,
@@ -116,7 +133,11 @@ export default function UploadExcelClient() {
     void loadSyncLog();
   }, []);
 
-  const progress = state.totalRows > 0 ? Math.round((state.importedRows / state.totalRows) * 100) : 0;
+  const progress = syncing
+    ? syncProgress
+    : state.totalRows > 0
+      ? Math.round((state.importedRows / state.totalRows) * 100)
+      : 0;
 
   const selectImportMethod = (method: ImportMethod) => {
     if (state.status === 'importing' || importMethod === method) return;
@@ -286,6 +307,7 @@ export default function UploadExcelClient() {
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
         setSyncing(true);
+        setSyncProgress(0);
         setState({
           status: 'importing',
           message: 'กำลังตรวจสอบโฟลเดอร์และดึงไฟล์ Excel จาก Shared Drive...',
@@ -295,31 +317,65 @@ export default function UploadExcelClient() {
         });
 
         try {
-          const res = await fetch('/api/import-jobs/sync-shared-drive', { method: 'POST' });
-          const data = await res.json();
-
-          if (res.ok) {
-            setRows([]);
-            setState({
-              status: 'done',
-              message: `${data.message} (${data.log.rowCount.toLocaleString('th-TH')} แถว)`,
-              totalRows: data.log.rowCount,
-              importedRows: data.log.rowCount,
-              fileName: data.log.filename,
-            });
-          } else {
-            setState({
-              status: 'error',
-              message: data.error ?? 'เกิดข้อผิดพลาดในการดึงข้อมูลจาก Shared Drive',
-              totalRows: 0,
-              importedRows: 0,
-              fileName: '',
-            });
+          const res = await fetch('/api/import-jobs/sync-shared-drive', {
+            method: 'POST',
+            headers: { Accept: 'application/x-ndjson' },
+          });
+          if (!res.ok || !res.body) {
+            const data = await res.json().catch(() => null) as { error?: string } | null;
+            throw new Error(data?.error ?? 'ไม่สามารถเริ่มการซิงค์ข้อมูลได้');
           }
-        } catch (err: any) {
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let completed = false;
+
+          const processLine = (line: string) => {
+            if (!line.trim()) return;
+            const event = JSON.parse(line) as SyncStreamEvent;
+            if (event.type === 'error') throw new Error(event.message);
+
+            if (event.type === 'progress') {
+              setSyncProgress(event.progress ?? 0);
+              setState((current) => ({
+                ...current,
+                status: 'importing',
+                message: event.message,
+                totalRows: event.totalRows ?? current.totalRows,
+                importedRows: event.importedRows ?? current.importedRows,
+              }));
+              return;
+            }
+
+            if (event.type === 'complete' && event.log) {
+              completed = true;
+              setSyncProgress(100);
+              setRows([]);
+              setState({
+                status: 'done',
+                message: `${event.message} (${event.log.rowCount.toLocaleString('th-TH')} แถว)`,
+                totalRows: event.log.rowCount,
+                importedRows: event.log.rowCount,
+                fileName: event.log.filename,
+              });
+            }
+          };
+
+          while (true) {
+            const { done, value } = await reader.read();
+            buffer += decoder.decode(value, { stream: !done });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            lines.forEach(processLine);
+            if (done) break;
+          }
+          if (buffer.trim()) processLine(buffer);
+          if (!completed) throw new Error('การเชื่อมต่อสิ้นสุดก่อนการซิงค์เสร็จสมบูรณ์');
+        } catch (err: unknown) {
           setState({
             status: 'error',
-            message: err.message ?? 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+            message: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
             totalRows: 0,
             importedRows: 0,
             fileName: '',
@@ -411,7 +467,9 @@ export default function UploadExcelClient() {
                 <Box>
                   <LinearProgress variant="determinate" value={progress} sx={{ height: 8, borderRadius: 999 }} />
                   <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b', fontWeight: 700, textAlign: 'right' }}>
-                    ความคืบหน้า: {state.importedRows.toLocaleString('th-TH')} / {state.totalRows.toLocaleString('th-TH')} แถว ({progress}%)
+                    {syncing
+                      ? `ความคืบหน้าการซิงค์: ${progress}%${state.totalRows > 0 ? ` · ${state.importedRows.toLocaleString('th-TH')} / ${state.totalRows.toLocaleString('th-TH')} แถว` : ''}`
+                      : `ความคืบหน้า: ${state.importedRows.toLocaleString('th-TH')} / ${state.totalRows.toLocaleString('th-TH')} แถว (${progress}%)`}
                   </Typography>
                 </Box>
               </Stack>

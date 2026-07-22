@@ -188,7 +188,7 @@ export default function GuidePage() {
                         ระบบซิงค์อัตโนมัติ (Shared Drive Sync)
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#475569', fontWeight: 600, lineHeight: 1.6 }}>
-                        นักวางแผนสามารถดึงไฟล์นำเข้าแผนผลิตจากเซิร์ฟเวอร์ส่วนกลางได้โดยตรงด้วยขั้นตอนอัตโนมัติ:
+                        สามารถดึงไฟล์นำเข้าแผนผลิตจากเซิร์ฟเวอร์ส่วนกลางได้โดยตรงด้วยขั้นตอนอัตโนมัติ:
                       </Typography>
                       <Box component="ul" sx={{ pl: 2.5, m: 0, '& li': { mb: 1.5, color: '#475569', fontSize: '0.875rem', lineHeight: 1.6, fontWeight: 550 } }}>
                         <li>
@@ -211,9 +211,7 @@ export default function GuidePage() {
                           <Box sx={{ p: 1, mt: 1, bgcolor: '#f1f5f9', borderRadius: 1.5, fontFamily: 'monospace', fontSize: '0.78rem', wordBreak: 'break-all', border: '1px solid rgba(15,23,42,0.06)' }}>
                             GET /api/import-jobs/sync-shared-drive?trigger=true&key=psc_sync_secret
                           </Box>
-                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748b', fontWeight: 600 }}>
-                            * หมายเหตุ: คุณสามารถเปลี่ยนรหัสผ่านคีย์นี้ได้โดยระบุฟิลด์ `SYNC_CRON_KEY` ในไฟล์ `.env`
-                          </Typography>
+                          
                         </li>
                       </Box>
                     </Stack>
