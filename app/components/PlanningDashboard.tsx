@@ -2486,6 +2486,45 @@ export default function PlanningDashboard({ data, initialYear, initialMonth }: P
                           },
                         }}
                       />
+                      {selectedJobIds.size > 0 && (
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                          <Chip
+                            role="status"
+                            aria-live="polite"
+                            label={`เลือกแล้ว ${formatNumber(selectedJobIds.size)} รายการ`}
+                            size="small"
+                            sx={{
+                              height: 24,
+                              borderRadius: 1.5,
+                              bgcolor: '#eef2ff',
+                              color: '#4338ca',
+                              border: '1px solid #c7d2fe',
+                              fontSize: '0.75rem',
+                              fontWeight: 900,
+                            }}
+                          />
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => setSelectedJobIds(new Set())}
+                            sx={{
+                              minWidth: 0,
+                              px: 1,
+                              py: 0.25,
+                              color: '#64748b',
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              textTransform: 'none',
+                              '&:hover': {
+                                color: '#dc2626',
+                                bgcolor: '#fef2f2',
+                              },
+                            }}
+                          >
+                            ล้างรายการที่เลือก
+                          </Button>
+                        </Stack>
+                      )}
                     </Stack>
                     <Typography variant={'body2'} sx={{ color: 'text.secondary', fontWeight: 600, mt: 0.5 }}>
                       ลาก Order ขึ้นลงเพื่อจัดลำดับ หรือลากข้ามคอลัมน์เพื่อเปลี่ยน Work Center

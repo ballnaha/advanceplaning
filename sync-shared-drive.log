@@ -11,3 +11,15 @@
 [Thu 07/23/2026  9:35:48.69] Starting shared-drive sync...
 {"success":true,"message":"ซิงค์ผ่าน Cron สำเร็จ: นำเข้าไฟล์ \"ZPP001.XLSX\"","log":{"filename":"ZPP001.XLSX","localBackupFilename":"1784774149947_ZPP001.XLSX","fileSize":103307,"mtime":"2026-07-23T02:00:54.000Z","syncedAt":"2026-07-23T02:35:49.980Z","rowCount":626}}
 [Thu 07/23/2026  9:35:49.98] Sync completed successfully.
+
+[Thu 07/23/2026 12:40:01.48] Starting shared-drive sync...
+curl: (7) Failed to connect to 127.0.0.1:3008 after 2034 ms: Could not connect to server
+
+
+[Thu 07/23/2026 15:10:01.13] Starting shared-drive sync...
+curl: (7) Failed to connect to 127.0.0.1:3008 after 2029 ms: Could not connect to server
+
+
+[Fri 07/24/2026  9:16:02.94] Starting shared-drive sync...
+curl: (7) Failed to connect to 127.0.0.1:3008 after 2051 ms: Could not connect to server
+
